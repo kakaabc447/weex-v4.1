@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>浪浪风格 WEEX AI 策略雷达 v4.2.1</title>
+<title>浪浪风格 WEEX AI 策略雷达 v4.2.2</title>
 <style>
 /* ===== 主题变量 ===== */
 :root {
@@ -283,7 +283,7 @@ position: relative;
 
 <div class="footer-note">
 行情来源：WEEX 合约公开接口（只读，不自动下单）<br>
-结构位判定 · 信心等级 · 多周期过滤 · v4.2.1（四周期策略引擎优化 + 单一AI实时市场分析师 + 短打改真短打：5M触发/5M止损/30分钟动能时限/同台子每日一次 + 修复波段线 trend1 报错；不含回测与模拟账户）
+结构位判定 · 信心等级 · 多周期过滤 · v4.2.2（四周期策略引擎优化 + 单一AI实时市场分析师 + 短打改真短打：5M触发/5M止损/30分钟动能时限/同台子每日一次 + 修复波段线 trend1 报错 + AI把关改回放弃才拦、盈亏比改回只挂牌不压制；不含回测与模拟账户）
 </div>
 
 <div class="actions">
@@ -1429,10 +1429,11 @@ invalidText = isLong
 if (branch === "SCALP") invalidText = isLong? `5M 收盘跌破 ${formatPrice(inv)}`: `5M 收盘站上 ${formatPrice(inv)}`; // v4.2：短打失效看 5M 收盘站回台子
 invVal = inv;
 
-// 扣除默认往返手续费与滑点后，TP1净空间仍需满足基本门槛；不合格的保留计划供观察，但不作为正式策略入池。
-if (rr === null || rr < MIN_RR || Math.abs(entryMid - tp1) / entryMid < MIN_TP1_PCT) {
-  const gateReason = rr === null || rr < MIN_RR
-    ? `净盈亏比不足 ${MIN_RR}（当前 ${rr === null ? "无法计算" : rr.toFixed(2)}）`
+// v4.2.2：盈亏比 <1.2 不再硬过滤——票照生、照入池，只挂 ⚠️（warnList 已含「盈亏比不足」），做不做由 Aaron 判断（恢复 2026-11-12「只挂牌不压制」）；
+// 仍硬过滤的只剩两种：盈亏比根本算不出（rr 为 null）、TP1 净距离不足 0.3%（没肉、手续费吃光，Aaron 旧规矩保留）
+if (rr === null || Math.abs(entryMid - tp1) / entryMid < MIN_TP1_PCT) {
+  const gateReason = rr === null
+    ? "净盈亏比无法计算"
     : `TP1净目标距离不足 ${(MIN_TP1_PCT * 100).toFixed(2)}%`;
   reasons = [gateReason, ...reasons];
   side = "WATCH";
@@ -2305,7 +2306,7 @@ if (best === null || (isLong ? s > best : s < best)) best = s; // 取最近的�
 return best;
 }
 
-// ===== DeepSeek AI 把关（v4.1；v4.2 修订）：趋势/反转/波段入池前审核；短打支规则直入池 + AI 事后点评，不走事前把关。
+// ===== DeepSeek AI 把关（v4.1；v4.2 修订；v4.2.2 把关改回单条件——只有结论「放弃」才拦，评级只展示）：趋势/反转/波段入池前审核；短打支规则直入池 + AI 事后点评，不走事前把关。
 function aiStrictMode() {
 try { return localStorage.getItem('weex_ai_strict') !== "0";} catch (e) { return true;}
 }
@@ -2541,34 +2542,22 @@ async function gateAndRecord(d) {
   }
 
   d.aiText = aiText.slice(0, 500);
-  if (!parsed.rating || !parsed.verdict) {
-    d.aiGateNote = "AI审核格式无法识别，未进入正式策略池，请人工查看";
-    rememberGate("manual", d.aiGateNote, d.aiText);
-    logAiBlocked(d, "AI评级/结论格式无法识别");
-    renderBranchStats();
-    return null;
-  }
-
   rec.aiText = aiText.slice(0, 500);
   rec.aiRating = parsed.rating;
-  if (parsed.verdict === "放弃" || parsed.rating === "低" || parsed.rating === "中偏低") {
+  // v4.2.2 把关改回单条件（Aaron 原口径）：只有 AI 结论「放弃」才拦；「观望」「可做」都入池，评级只展示、不当门槛
+  if (!parsed.rating || !parsed.verdict) {
+    // 格式无法识别 = AI 没给出有效结论：按未审处理，入池并挂人工复核标，原文留给 Aaron 自己看
+    rec.aiState = "manual";
+    rec.aiGate = "open-manual";
+    d.aiGateNote = "AI审核格式无法识别，已入池并标记人工复核";
+    rememberGate("manual", d.aiGateNote, d.aiText);
+    insertRecord(rec);
+    return rec;
+  }
+  if (parsed.verdict === "放弃") {
     d.aiGateNote = `AI审核：${parsed.rating} · ${parsed.verdict}，未进入正式策略池`;
     rememberGate("blocked", d.aiGateNote, d.aiText);
     logAiBlocked(d, `AI否决：${parsed.rating}/${parsed.verdict}`);
-    renderBranchStats();
-    return null;
-  }
-  if (parsed.verdict === "观望" || parsed.rating === "中") {
-    d.aiGateNote = `AI审核：${parsed.rating} · ${parsed.verdict}，建议人工观察，未进入正式策略池`;
-    rememberGate("watch", d.aiGateNote, d.aiText);
-    logAiBlocked(d, `AI建议观察：${parsed.rating}/${parsed.verdict}`);
-    renderBranchStats();
-    return null;
-  }
-  if (!(parsed.verdict === "可做" && (parsed.rating === "高" || parsed.rating === "中偏高"))) {
-    d.aiGateNote = "AI审核条件未达到准入标准，未进入正式策略池";
-    rememberGate("blocked", d.aiGateNote, d.aiText);
-    logAiBlocked(d, `AI未达到准入条件：${parsed.rating}/${parsed.verdict}`);
     renderBranchStats();
     return null;
   }
@@ -2591,7 +2580,7 @@ async function gateAndRecord(d) {
   rec.aiText = aiText.slice(0, 500);
   rec.aiState = "done";
   rec.aiGate = "passed";
-  d.aiGateNote = `AI审核通过：${parsed.rating}`;
+  d.aiGateNote = `AI审核：${parsed.rating} · ${parsed.verdict}，已入池`;
   rememberGate("passed", d.aiGateNote, d.aiText);
   insertRecord(rec);
   return rec;
