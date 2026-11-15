@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>浪浪风格 WEEX AI 策略雷达 v4.1</title>
+<title>浪浪风格 WEEX AI 策略雷达 v4.2.1</title>
 <style>
 /* ===== 主题变量 ===== */
 :root {
@@ -283,7 +283,7 @@ position: relative;
 
 <div class="footer-note">
 行情来源：WEEX 合约公开接口（只读，不自动下单）<br>
-结构位判定 · 信心等级 · 多周期过滤 · v4.1（四周期策略引擎优化 + 单一AI实时市场分析师；不含回测与模拟账户）
+结构位判定 · 信心等级 · 多周期过滤 · v4.2.1（四周期策略引擎优化 + 单一AI实时市场分析师 + 短打改真短打：5M触发/5M止损/30分钟动能时限/同台子每日一次 + 修复波段线 trend1 报错；不含回测与模拟账户）
 </div>
 
 <div class="actions">
@@ -343,7 +343,8 @@ const MAX_RECORDS = 500;
 // 探台闸常量（v3.6）：TP1 前台子被探次数分档——2 次打标提醒、≥SHELF_KILL_TESTS 次直接不出单（常数可调）
 const SHELF_WARN_TESTS = 2, SHELF_KILL_TESTS = 3;
 // 分支常量（v3.7）：四分支各自的触发/闸口参数，常数可调
-const SCALP_BREAK_ATR = 0.2, SCALP_BUFFER_ATR = 0.3, SCALP_MIN_TESTS = 2, SCALP_FEE_MULT = 3; // 短打：收盘破台 ≥0.2×ATR、止损缓冲 0.3×ATR、台子至少被探 2 次、TP1 距离 ≥3 倍往返手续费
+const SCALP_BREAK_ATR = 0.2, SCALP_BUFFER_ATR = 0.3, SCALP_MIN_TESTS = 2, SCALP_FEE_MULT = 3; // 短打（v4.2 真短打）：5M 收盘破台 ≥0.2×ATR(5M)、止损缓冲 0.3×ATR(5M)、台子至少被探 2 次、TP1 距离 ≥3 倍往返手续费
+const SCALP_VOL_MULT = 1.5, SCALP_MIN_STOP_PCT = 0.0025, SCALP_TTL_MS = 30 * 60 * 1000; // 短打：破位 5M 量 ≥1.5 倍均量、止损距离 <0.25% 不出、出生 30 分钟未走出路程打「动能不足」
 const REV_RR_MIN = 1.2, REV_WATCH_TTL_MS = 2 * 3600 * 1000; // 反转：盈亏比硬门槛 1.2；预警观察有效期 2 小时
 const AI_GATE_TIMEOUT_MS = 15000, AI_DOWN_COOLDOWN_MS = 30 * 60 * 1000; // AI 把关：单次超时 15 秒；接口不可用后冷却 30 分钟再试
 const BRANCH_LABEL = { TREND: "趋势支", SCALP: "短打支", REVERSAL: "反转支", SWING: "波段支"};
@@ -554,6 +555,9 @@ if (r.timeInv) return { cls: "bad", text: "跟进：情况不对 · 逻辑已失
 if (r.timeTP3) return { cls: "good", text: "跟进：TP3 已到 · 可全部落袋离场"};
 if (r.timeTP2) return { cls: "good", text: `跟进：TP2 已到 · 可继续减仓，余仓止损至少移到${be}`};
 if (r.timeTP1) return { cls: "good", text: `跟进：TP1 已到 · 可减仓落袋，余仓止损可移到${be}`};
+if (r.branch === "SCALP" && r.ts && Date.now() - r.ts > SCALP_TTL_MS && !r.timeTP1 && (r.maxFav || 0) < BE_TRIGGER) {
+return { cls: "mid", text: "跟进：动能不足 · 出生超 30 分钟未到推保本线，短打已过期，建议离场"};
+}
 const mf = r.maxFav || 0;
 if (mf >= BE_TRIGGER && Number.isFinite(r.entryMidVal)) {
 return { cls: "mid", text: `跟进：已顺向走出约 ${Math.round(mf * 100)}% 路程 · 可推保本（止损移至${be}）`};
@@ -756,7 +760,7 @@ function checkRecordHistoryTriggers(symbolId, k, intervalMs, track) {
 }
 
 // ===== 失效盖章判定（收盘口径：短线看 15M 收盘，波段看 1H 收盘） =====
-function checkInvalidation(symbolId, close15, close1h) {
+function checkInvalidation(symbolId, close15, close1h, close5) {
 let changed = false;
 const now = new Date().toLocaleTimeString("zh-CN", { hour12: false});
 for (const r of recordPool) {
@@ -764,7 +768,7 @@ if (r.symbolId !== symbolId) continue;
 if (r.timeInv || r.timeSL || r.timeTP3) continue;
 if (r.invVal === undefined || r.invVal === null ||!Number.isFinite(r.invVal)) continue;
 if (r.ts && Date.now() - r.ts > ttlFor(r)) continue; // 已过期：不再追踪
-const close = r.invTf === "1h"? close1h: close15;
+const close = r.invTf === "1h"? close1h: r.invTf === "5m"? close5: close15; // v4.2：短打记录按 5M 收盘判失效
 if (close === null || close === undefined ||!Number.isFinite(close) || close <= 0) continue;
 const crossed = r.side === 'LONG'? close < r.invVal: close > r.invVal;
 if (crossed) {
@@ -1222,8 +1226,8 @@ const bearishCandle = candleClose < candleOpen;
 const nearEma = ema50_5!== null && Math.abs(analysisPrice - ema50_5) / analysisPrice < 0.008;
 const longRetestSetup = detectBreakRetestConfirm(k15, k5, "LONG", price);
 const shortRetestSetup = detectBreakRetestConfirm(k15, k5, "SHORT", price);
-const longScalpShelf = detectScalpShelf(k15, "LONG", structure15.atrValue);
-const shortScalpShelf = detectScalpShelf(k15, "SHORT", structure15.atrValue);
+const longScalpShelf = detectScalpShelf(k15, k5, "LONG", structure5.atrValue, info.id);
+const shortScalpShelf = detectScalpShelf(k15, k5, "SHORT", structure5.atrValue, info.id);
 const longScalpConfirm = longScalpShelf !== null && isFiveMinuteConfirm(k5, "LONG", longScalpShelf, structure15.atrValue) && price > longScalpShelf && price <= longScalpShelf + 0.95 * structure15.atrValue;
 const shortScalpConfirm = shortScalpShelf !== null && isFiveMinuteConfirm(k5, "SHORT", shortScalpShelf, structure15.atrValue) && price < shortScalpShelf && price >= shortScalpShelf - 0.95 * structure15.atrValue;
 const longBreak = longRetestSetup.stage >= 1 || longScalpShelf !== null;
@@ -1353,7 +1357,7 @@ let inv;
 if (!branch) {
 scalpShelf = isLong ? longScalpShelf : shortScalpShelf;
 if (scalpShelf !== null && (isLong ? price <= scalpShelf : price >= scalpShelf)) scalpShelf = null;
-if (scalpShelf !== null && confirmed) branch = "SCALP";
+if (scalpShelf !== null) branch = "SCALP"; // v4.2：5M 破位K线本身即确认（放量+收极值已在 detectScalpShelf 内审），不再叠加趋势支的 confirmed
 else if (((isLong && trend4 !== "BEAR" && structure1Bias !== "BEAR" && (trend1 === "BULL" || structure1Bias === "BULL")) || (!isLong && trend4 !== "BULL" && structure1Bias !== "BULL" && (trend1 === "BEAR" || structure1Bias === "BEAR"))) && (isLong ? longPullback : shortPullback) && confirmed) branch = "TREND";
 }
 if (branch === "SCALP") inv = scalpShelf;
@@ -1383,7 +1387,7 @@ if (!Number.isFinite(inv) || (isLong? inv >= entryMid: inv <= entryMid)) {
 side = "WATCH"; type = "结构位缺失 · 观望";
 entry = null;
 } else {
-stop = isLong? inv - (branch === "SCALP"? SCALP_BUFFER_ATR: 0.5) * atr15: inv + (branch === "SCALP"? SCALP_BUFFER_ATR: 0.5) * atr15;
+stop = isLong? inv - (branch === "SCALP"? SCALP_BUFFER_ATR * atr5: 0.5 * atr15): inv + (branch === "SCALP"? SCALP_BUFFER_ATR * atr5: 0.5 * atr15); // v4.2：短打止损缓冲改按 ATR(5M)，与 5M 噪音匹配
 const tps = buildTpLevels(k15, structure15, side, entryMid);
 tp1 = tps.length > 0? tps[0]: null;
 tp2 = tps.length > 1? tps[1]: null;
@@ -1410,6 +1414,7 @@ const tp1Pct = Math.abs(entryMid - tp1) / entryMid;
 grade = tp1Pct < GRADE_ULTRA? "超短线": tp1Pct <= GRADE_SHORT? "短线": "波段";
 const geShort = gradeAndEta(Math.abs(entryMid - tp1), atr15, 15, grade);
 grade = geShort.grade; etaText = geShort.etaText;
+if (branch === "SCALP") etaText = "约5–20分钟"; // v4.2 真短打：预计持仓 5–20 分钟（30 分钟时限见跟进提示）
 if (grade === "超短线") netDist = Math.abs(entryMid - tp1) - roundTripCost;
 
 // v3.6 判断行（死规则）：保本胜率 + 失效位距离 + 一行结论
@@ -1421,6 +1426,7 @@ judgeText = `判断：${verdictText} · 保本胜率 ≈ ${beWin!== null? Math.r
 invalidText = isLong
 ? `15M 收盘跌破 ${formatPrice(inv)}`
 : `15M 收盘站上 ${formatPrice(inv)}`;
+if (branch === "SCALP") invalidText = isLong? `5M 收盘跌破 ${formatPrice(inv)}`: `5M 收盘站上 ${formatPrice(inv)}`; // v4.2：短打失效看 5M 收盘站回台子
 invVal = inv;
 
 // 扣除默认往返手续费与滑点后，TP1净空间仍需满足基本门槛；不合格的保留计划供观察，但不作为正式策略入池。
@@ -1442,6 +1448,12 @@ if ((side === "LONG" || side === "SHORT") && branch === "SCALP") type = side ===
 if ((side === "LONG" || side === "SHORT") && branch === "REVERSAL" && rr!== null && rr < REV_RR_MIN) {
 reasons = [`反转支盈亏比 ${rr.toFixed(2)} < ${REV_RR_MIN}，不出单`,...reasons];
 side = "NONE"; type = "反转确认 · 盈亏比不足";
+entry = null; stop = null; tp1 = null; tp2 = null; tp3 = null;
+grade = null; etaText = null; judgeText = null; branch = null;
+}
+if ((side === "LONG" || side === "SHORT") && branch === "SCALP" && riskPct < SCALP_MIN_STOP_PCT) {
+reasons = [`短打支止损距离 ${(riskPct * 100).toFixed(2)}% < 0.25%，手续费吃光，不出单`,...reasons];
+side = "NONE"; type = "短打 · 止损过薄不出单";
 entry = null; stop = null; tp1 = null; tp2 = null; tp3 = null;
 grade = null; etaText = null; judgeText = null; branch = null;
 }
@@ -1499,7 +1511,8 @@ confidenceScore: confidence.score, confidenceLabel: confidence.label, confidence
 reasons: reasons.join(" · ") || "暂无明确信号",
 trend4, trend1, trend15, structure1Bias, volOk, rsiValue, div,
 entry, stop, tp1, tp2, tp3, rr, riskPct, warnMsg, grade, netDist, etaText, invalidText,
-invVal, invTf: "15m",
+invVal, invTf: branch === "SCALP"? "5m": "15m",
+lastClose5: k5.closes[k5.closes.length - 1],
 lastClose15: k15.closes[k15.closes.length - 1],
 lastClose1h: k1h.closes[k1h.closes.length - 1],
 swing,
@@ -1541,6 +1554,7 @@ if (!price || price <= 0) return null;
 if (k1h.closes.length < 60 || k15.closes.length < 5) return null;
 const trend4 = getTrend(k4h);
 const s1 = getStructure(k1h);
+const trend1 = getTrend(k1h); // v4.2.1 修复：波段线算信心时要用 1H 趋势，v4.1 漏声明此变量，BTC 一出波段候选就整卡报错（Can't find variable: trend1）
 const atr1 = s1.atrValue;
 const atr15 = getStructure(k15).atrValue;
 if (!Number.isFinite(atr1) || atr1 <= 0) return null;
@@ -1809,7 +1823,7 @@ trend4: "NEUTRAL", trend1: "NEUTRAL", trend15: "NEUTRAL",
 volOk: false, rsiValue: null, div: { bull: false, bear: false},
 entry: null, stop: null, tp1: null, tp2: null, tp3: null, rr: null,
 riskPct: null, warnMsg: null, grade: null, netDist: null, etaText: null, invalidText: "",
-invVal: null, invTf: "15m", lastClose15: null, lastClose1h: null, swing: null,
+invVal: null, invTf: "15m", lastClose5: null, lastClose15: null, lastClose1h: null, swing: null,
 longScore: 0, shortScore: 0, lastBarHigh: null, lastBarLow: null, lastBarTs: null
 };
 }
@@ -1827,11 +1841,11 @@ const recentShortRecords = recordPool.filter(x => x.symbolId === r.symbolId && x
 const recentSwingRecords = recordPool.filter(x => x.symbolId === r.symbolId && x.track === "SWING");
 if (recentShortRecords.length) checkRecordTriggers(r.symbolId, r.price, r.lastBarHigh, r.lastBarLow, r.lastBarTs, 5 * 60 * 1000, "SHORT");
 if (recentSwingRecords.length) checkRecordTriggers(r.symbolId, r.price, r.lastBar1hHigh, r.lastBar1hLow, r.lastBar1hTs, 60 * 60 * 1000, "SWING");
-checkInvalidation(r.symbolId, r.lastClose15, r.lastClose1h);
+checkInvalidation(r.symbolId, r.lastClose15, r.lastClose1h, r.lastClose5);
 }
 // v3.5 生成前查越线：失效周期最近一根已收盘 K 线若已越过失效位，逻辑在生成前已坏，不生成（短线）
 if ((r.side === "LONG" || r.side === "SHORT") && Number.isFinite(r.invVal)) {
-const lcGen = r.invTf === "1h"? r.lastClose1h: r.lastClose15;
+const lcGen = r.invTf === "1h"? r.lastClose1h: r.invTf === "5m"? r.lastClose5: r.lastClose15;
 if (Number.isFinite(lcGen) && ((r.side === "SHORT" && lcGen > r.invVal) || (r.side === "LONG" && lcGen < r.invVal))) {
 r.side = "NONE";
 r.type = "生成时已失效";
@@ -1854,7 +1868,7 @@ if (r.branch === "REVERSAL") r.suppressRecord = true;
 }
 if (r.side === "LONG" || r.side === "SHORT") {
 newSignalSet.add(r.symbolId + "_" + r.side);
-// 只有明确归入分支的正式信号才进入策略池；趋势、短打、反转、波段全部先经过AI审核。
+// 只有明确归入分支的正式信号才进入策略池；趋势、反转、波段先经过AI审核，短打直入池+AI事后点评（v4.2）。
 if (r.branch &&!r.suppressRecord) {
 const added = await gateAndRecord(r);
 if (added) hasNewRecord = true;
@@ -2239,37 +2253,51 @@ function checkReversalConfirm(symbolId, k15, k5) {
   return null;
 }
 
-// 短打支触发（v3.8 加新鲜破位）：找一层被探过 ≥SCALP_MIN_TESTS 次、且被最近一根已收盘 15M 收盘越过 ≥SCALP_BREAK_ATR×ATR 的台子——
-// 上一根收盘必须还在台子内侧（未决定性越过），跌穿/涨穿已久的旧台子不算短打（归趋势支判定）；返回离现价最近的一层，找不到返回 null
-function detectScalpShelf(k15, side, atr15) {
+// 短打支触发（v4.2 改真短打）：台子与被探次数仍按已收盘 15M 结构数；破位改由已收盘 5M 判定——
+// 最后一根 5M 收盘越过台子 ≥0.2×ATR(5M)、上一根 5M 收盘尚未决定性越过（新鲜破位）、破位K线放量 ≥1.5 倍均量且收在极值附近，当根出生；
+// 同一币种同一台子当天已有短打记录用过 → 不再重复出。找不到返回 null
+function detectScalpShelf(k15, k5, side, atr5, symbolId) {
 const ck = closedK15(k15);
-if (!ck || ck.closes.length < 8 ||!Number.isFinite(atr15) || atr15 <= 0) return null;
+if (!ck || ck.closes.length < 8 || !k5 || !Array.isArray(k5.closes) || k5.closes.length < 21 || !Number.isFinite(atr5) || atr5 <= 0) return null;
 const isLong = side === "LONG";
-const m = ck.closes.length;
-const lastClose = ck.closes[m - 1];
-const prevClose = ck.closes[m - 2];
-const prior = { opens: ck.opens.slice(0, -1), highs: ck.highs.slice(0, -1), lows: ck.lows.slice(0, -1), closes: ck.closes.slice(0, -1)};
+const prior = { opens: ck.opens.slice(0, -1), highs: ck.highs.slice(0, -1), lows: ck.lows.slice(0, -1), closes: ck.closes.slice(0, -1) };
 if (prior.closes.length < 4) return null;
 const cands = [];
-const piv = isLong? findPivotHighs(prior.highs): findPivotLows(prior.lows);
+const piv = isLong ? findPivotHighs(prior.highs) : findPivotLows(prior.lows);
 for (const p of piv) cands.push(p.value);
-const prevExt = isLong? Math.max(...prior.highs.slice(-20)): Math.min(...prior.lows.slice(-20));
+const prevExt = isLong ? Math.max(...prior.highs.slice(-20)) : Math.min(...prior.lows.slice(-20));
 if (Number.isFinite(prevExt)) cands.push(prevExt);
+// 破位K线（最后一根已收盘 5M）的量与收盘位置先审：不达标整轮不出短打
+const n5 = k5.closes.length;
+const lastClose5 = k5.closes[n5 - 1], prevClose5 = k5.closes[n5 - 2];
+const lastHigh5 = k5.highs[n5 - 1], lastLow5 = k5.lows[n5 - 1];
+const range5 = lastHigh5 - lastLow5;
+if (!(range5 > 0)) return null;
+const closeAtExtreme = isLong ? lastClose5 >= lastLow5 + (2 / 3) * range5 : lastClose5 <= lastLow5 + (1 / 3) * range5;
+if (!closeAtExtreme) return null;
+const volAvg5 = sma(k5.volumes.slice(0, -1), 20);
+if (volAvg5 === null || !(k5.volumes[n5 - 1] >= SCALP_VOL_MULT * volAvg5)) return null;
+// 被探次数的贴台带宽仍按 15M 尺度（台子是 15M 结构），取不到 ATR(15M) 时退回 ATR(5M)
+const atr15v = atr(k15, 14);
+const bandAtr = Number.isFinite(atr15v) && atr15v > 0 ? atr15v : atr5;
+// 同一台子一天只许破一次：今天已有同币同向短打记录用过这层台子（失效位 ±0.15% 内）→ 跳过
+const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+const shelfUsedToday = (s) => recordPool.some(r => r.branch === "SCALP" && r.symbolId === symbolId && r.side === side && r.ts >= dayStart.getTime() && Number.isFinite(r.invVal) && Math.abs(r.invVal - s) / s <= 0.0015);
 let best = null;
 for (const s of cands) {
 if (!Number.isFinite(s)) continue;
-const broken = isLong? lastClose > s + SCALP_BREAK_ATR * atr15: lastClose < s - SCALP_BREAK_ATR * atr15;
+const broken = isLong ? lastClose5 > s + SCALP_BREAK_ATR * atr5 : lastClose5 < s - SCALP_BREAK_ATR * atr5;
 if (!broken) continue;
-// 新鲜破位：上一根收盘还没有决定性越过这层台子（否则是陈年破位，顺势单不许再挂短打名）
-const fresh = isLong? prevClose <= s + SCALP_BREAK_ATR * atr15: prevClose >= s - SCALP_BREAK_ATR * atr15;
+const fresh = isLong ? prevClose5 <= s + SCALP_BREAK_ATR * atr5 : prevClose5 >= s - SCALP_BREAK_ATR * atr5;
 if (!fresh) continue;
+if (shelfUsedToday(s)) continue;
 let tests = 0, lastTestIndex = -99;
 const recentStart = Math.max(0, prior.closes.length - 24);
-for (let j = recentStart; j < prior.closes.length; j++) {
+for (let jj = recentStart; jj < prior.closes.length; jj++) {
   const touched = isLong
-    ? prior.highs[j] >= s - 0.22 * atr15 && prior.highs[j] <= s + 0.30 * atr15 && prior.closes[j] <= s + 0.15 * atr15
-    : prior.lows[j] <= s + 0.22 * atr15 && prior.lows[j] >= s - 0.30 * atr15 && prior.closes[j] >= s - 0.15 * atr15;
-  if (touched && j - lastTestIndex >= 2) { tests++; lastTestIndex = j; }
+    ? prior.highs[jj] >= s - 0.22 * bandAtr && prior.highs[jj] <= s + 0.30 * bandAtr && prior.closes[jj] <= s + 0.15 * bandAtr
+    : prior.lows[jj] <= s + 0.22 * bandAtr && prior.lows[jj] >= s - 0.30 * bandAtr && prior.closes[jj] >= s - 0.15 * bandAtr;
+  if (touched && jj - lastTestIndex >= 2) { tests++; lastTestIndex = jj; }
 }
 if (tests < SCALP_MIN_TESTS) continue;
 if (best === null || (isLong ? s > best : s < best)) best = s; // 取最近的一层有效测试位
@@ -2277,7 +2305,7 @@ if (best === null || (isLong ? s > best : s < best)) best = s; // 取最近的�
 return best;
 }
 
-// ===== DeepSeek AI 把关（v4.1）：四个策略分支统一入池前审核，默认严格拦截未完成审核的信号。
+// ===== DeepSeek AI 把关（v4.1；v4.2 修订）：趋势/反转/波段入池前审核；短打支规则直入池 + AI 事后点评，不走事前把关。
 function aiStrictMode() {
 try { return localStorage.getItem('weex_ai_strict') !== "0";} catch (e) { return true;}
 }
@@ -2396,9 +2424,46 @@ function aiGateFingerprint(d, rec) {
   return `${rec.symbolId}|${rec.side}|${rec.branch || "none"}|${entryUnit}|${invUnit}`;
 }
 
+// v4.2 短打支 AI 事后点评：记录已直入池后异步补评级，评级只展示、不拦单；无 Key/接口冷却时标未审，不重试轰炸
+async function scalpPostReview(d, rec) {
+  const key = getDsKey();
+  if (!key || Date.now() < aiDownUntil) { rec.aiState = "unreviewed"; saveRecords(); renderRecordPool(); return; }
+  try {
+    const resp = await fetch(DS_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
+      body: JSON.stringify({
+        model: "deepseek-flash", thinking: { type: "disabled" }, temperature: 0.2, max_tokens: 420,
+        messages: [{ role: "user", content: buildDsPrompt(d, rec) }]
+      }),
+      signal: AbortSignal.timeout(AI_GATE_TIMEOUT_MS)
+    });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const data = await resp.json();
+    const aiText = String(data?.choices?.[0]?.message?.content || "").trim();
+    if (!aiText) throw new Error("空回复");
+    const parsed = parseAiReview(aiText);
+    rec.aiText = aiText.slice(0, 500);
+    rec.aiRating = parsed.rating;
+    rec.aiState = "done";
+    d.aiText = rec.aiText;
+  } catch (e) {
+    aiDownUntil = Date.now() + AI_DOWN_COOLDOWN_MS;
+    rec.aiState = "unreviewed";
+  }
+  saveRecords(); renderRecordPool();
+}
+
 async function gateAndRecord(d) {
   const rec = buildRecord(d);
   if (!rec) return null;
+  // v4.2 短打支：规则直入池 + AI 事后点评（5M 的单等不起事前把关）；其余分支仍走下方入池前审核
+  if (rec.branch === "SCALP") {
+    rec.aiGate = "post";
+    insertRecord(rec);
+    scalpPostReview(d, rec);
+    return rec;
+  }
   const fingerprint = aiGateFingerprint(d, rec);
   const previousAttempt = aiGateAttemptCache.get(fingerprint);
   const previousTs = typeof previousAttempt === "number" ? previousAttempt : previousAttempt?.ts;
