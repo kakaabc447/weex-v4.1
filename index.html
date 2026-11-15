@@ -306,6 +306,8 @@ position: relative;
     <h3>市场环境与重点观察</h3>
     <div class="ai-desc">分析 BTC 风向、监控币种相对强弱、四周期冲突、突破/回踩质量及潜在多空机会。没有合格机会时明确提示等待，不为了出单而凑策略。</div>
     <div class="ai-count" id="aiMarketCount">等待行情数据</div>
+    <label for="aiManualEvent" style="display:block;font-size:12px;color:var(--muted);margin:8px 0 5px">手动事件（可选）</label>
+    <textarea id="aiManualEvent" rows="2" maxlength="1000" placeholder="例如：CPI +0.4% 超预期；留空则不提供事件" style="width:100%;resize:vertical;background:var(--item-bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px;font:inherit;font-size:12px;line-height:1.6"></textarea>
     <div class="ai-work-actions">
       <button class="btn" id="aiMarketRunBtn" onclick="runAiMarketAnalysis(false)">立即分析市场</button>
       <button class="btn btn-secondary" id="aiMarketAutoBtn" onclick="toggleAiMarketAuto()">自动分析：关（15分钟）</button>
@@ -1510,6 +1512,7 @@ judgeText, branch, aiGateNote: null, conflictWith: null, shelfTests: shelfInfo? 
 atr15Val: structure15.atrValue,
 dayHigh: k1h.highs.length? Math.max(...k1h.highs.slice(-24)): null,
 dayLow: k1h.lows.length? Math.min(...k1h.lows.slice(-24)): null,
+marketKlines15m: k15.closes.slice(-20).map((close, i) => { const idx = k15.closes.length - Math.min(20, k15.closes.length) + i; return { time:k15.times[idx], open:k15.opens[idx], high:k15.highs[idx], low:k15.lows[idx], close, volume:k15.volumes[idx] }; }),
 last6Text: k15.closes.slice(-6).map((c6, i6) => { const idx6 = k15.closes.length - 6 + i6; const d6 = new Date(k15.times[idx6]); const hh6 = String(d6.getHours()).padStart(2, "0"), mm6 = String(d6.getMinutes()).padStart(2, "0"); return `${hh6}:${mm6} ${formatPrice(k15.opens[idx6])}/${formatPrice(k15.highs[idx6])}/${formatPrice(k15.lows[idx6])}/${formatPrice(c6)}`;}).join("\n"),
 last6Text5m: k5.closes.slice(-6).map((c6, i6) => { const idx6 = k5.closes.length - 6 + i6; const d6 = new Date(k5.times[idx6]); const hh6 = String(d6.getHours()).padStart(2, "0"), mm6 = String(d6.getMinutes()).padStart(2, "0"); return `${hh6}:${mm6} ${formatPrice(k5.opens[idx6])}/${formatPrice(k5.highs[idx6])}/${formatPrice(k5.lows[idx6])}/${formatPrice(c6)}`;}).join("\n")
 };
@@ -2556,6 +2559,7 @@ function switchMainPage(page) {
   document.getElementById("mainRadarBtn")?.classList.toggle("active", currentMainPage === "radar");
   document.getElementById("mainAiBtn")?.classList.toggle("active", currentMainPage === "ai");
   if (currentMainPage === "ai") renderAiWorkspace();
+  syncAiMarketAutoTimer();
 }
 
 function saveAiWorkspace() {
@@ -2609,39 +2613,213 @@ function renderAiWorkspace() {
   }
 }
 
-function buildMarketPrompt() {
-  if (!Array.isArray(lastResults) || !lastResults.some(r => r && r.price > 0)) {
-    throw new Error("还没有有效行情数据，请先回到第一页点击刷新行情。");
+const AI_MARKET_SNAPSHOT_KEY = "weex_ai_market_snapshot_v2";
+const AI_OI_HISTORY_KEY = "weex_ai_oi_history_v2";
+const AI_MARKET_FETCH_TIMEOUT_MS = 8000;
+
+async function fetchOptionalJson(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AI_MARKET_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { method:"GET", headers:{"Accept":"application/json"}, cache:"no-store", signal:controller.signal });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timeout);
   }
-  const ageMs = Date.now() - lastResultsUpdatedAt;
-  if (!lastResultsUpdatedAt || ageMs > 2 * 60 * 1000) {
-    throw new Error("当前行情快照已超过2分钟，请先回到第一页刷新行情，再进行AI分析。");
+}
+
+function unwrapRows(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw?.data)) return raw.data;
+  return raw ? [raw] : [];
+}
+
+function okxInstId(symbol) {
+  const base = String(symbol || "").replace(/USDT$/i, "");
+  return base ? `${base}-USDT-SWAP` : "";
+}
+
+function okxRatioValue(raw) {
+  const row = unwrapRows(raw)[0];
+  if (!row) return null;
+  for (const key of ["longShortRatio", "longShortAccountRatio", "ratio"]) {
+    const n = Number(row[key]);
+    if (Number.isFinite(n) && n > 0) return n;
   }
-  const rows = lastResults.filter(r => r && r.price > 0).map(r => ({
-    coin:r.name, symbol:r.symbolId, price:r.price, change24hPct:r.changePct,
-    trend4h:r.trend4, trend1h:r.trend1, structure1h:r.structure1Bias || "未知", trend15m:r.trend15,
-    side:r.side, signal:r.type, branch:r.branch || null,
-    confidence:r.confidenceLabel || r.swing?.confidenceLabel || null,
-    rsi5m:r.rsiValue, volumeSurge5m:r.volOk, divergence:r.div?.bull ? "底背离" : r.div?.bear ? "顶背离" : "无",
-    entry:r.entry, stop:r.stop, tp1:r.tp1, tp2:r.tp2, tp3:r.tp3, netRR:r.rr,
-    dayLow:r.dayLow, dayHigh:r.dayHigh, lastSixClosed15m:r.last6Text || null, lastSixClosed5m:r.last6Text5m || null
-  }));
-  const payload = {
-    generatedAt:new Date(lastResultsUpdatedAt).toISOString(),
-    ageSeconds:Math.round(ageMs / 1000),
-    dataSource:"本机刚刚读取的WEEX公开合约行情及已收盘K线",
-    symbols:rows
+  const long = Number(row.longAccount), short = Number(row.shortAccount);
+  return Number.isFinite(long) && Number.isFinite(short) && short > 0 ? long / short : null;
+}
+
+async function fetchDerivativeForSymbol(r) {
+  const symbol = r.symbolId;
+  const base = symbol.replace(/USDT$/i, "");
+  const instId = okxInstId(symbol);
+  const weexFundingUrl = `${API}/market/premiumIndex?symbol=${encodeURIComponent(symbol)}`;
+  const weexOiUrl = `${API}/market/openInterest?symbol=${encodeURIComponent(symbol)}`;
+  const okxFundingUrl = `https://www.okx.com/api/v5/public/funding-rate?instId=${encodeURIComponent(instId)}`;
+  const okxOiUrl = `https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=${encodeURIComponent(instId)}`;
+  const okxRatioUrl = `https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=${encodeURIComponent(base)}&period=1H`;
+
+  const [weexFundingRaw, weexOiRaw, ratioRaw] = await Promise.all([
+    fetchOptionalJson(weexFundingUrl), fetchOptionalJson(weexOiUrl), fetchOptionalJson(okxRatioUrl)
+  ]);
+  const wf = unwrapRows(weexFundingRaw)[0];
+  const wo = unwrapRows(weexOiRaw)[0];
+  const weexFunding = wf && Number.isFinite(Number(wf.lastFundingRate)) ? Number(wf.lastFundingRate) : null;
+  const weexOi = wo && Number.isFinite(Number(wo.openInterest)) ? Number(wo.openInterest) : null;
+  // 两条回退链与多空比查询并行执行；WEEX成功时不会请求对应OKX接口。
+  const [okxFundingRaw, okxOiRaw] = await Promise.all([
+    weexFunding === null ? fetchOptionalJson(okxFundingUrl) : Promise.resolve(null),
+    weexOi === null ? fetchOptionalJson(okxOiUrl) : Promise.resolve(null)
+  ]);
+  const of = unwrapRows(okxFundingRaw)[0];
+  const oo = unwrapRows(okxOiRaw)[0];
+  const okxFunding = of && Number.isFinite(Number(of.fundingRate)) ? Number(of.fundingRate) : null;
+  const okxOiField = oo?.oiUsd != null ? "oiUsd" : oo?.oiCcy != null ? "oiCcy" : "oi";
+  const okxOiValue = Number(oo?.[okxOiField]);
+  const fundingRate = weexFunding !== null ? weexFunding : okxFunding;
+  const oi = weexOi !== null ? weexOi : (oo && Number.isFinite(okxOiValue) ? okxOiValue : null);
+  const oiUnit = weexOi !== null ? "合约张数" : oi !== null ? (okxOiField === "oiUsd" ? "USD名义价值" : okxOiField === "oiCcy" ? "基础币数量" : "合约张数") : null;
+  const ratio = okxRatioValue(ratioRaw);
+  return {
+    fundingRate, fundingSource:weexFunding !== null ? "WEEX" : okxFunding !== null ? "OKX" : null,
+    openInterest:oi, oiSource:weexOi !== null ? "WEEX" : oi !== null ? "OKX" : null, oiUnit,
+    oiTs:weexOi !== null ? (Number(wo.time) || Date.now()) : oi !== null ? (Number(oo.ts) || Date.now()) : null,
+    longShortRatio:ratio, longShortSource:ratio !== null ? "OKX" : null
   };
-  return `你是谨慎、客观的加密货币市场分析师。你只能根据下面提供的快照分析，不得假装拥有其他实时行情，不得编造价格、成交量或指标。若数据缺失、冲突或快照过期，必须明确指出。
-请按以下结构输出：
-一、整体市场环境：偏趋势、偏震荡还是方向分化，说明4H和1H依据。
-二、BTC风向：4H大方向、1H结构、15M位置是否协调，当前最大的风险是什么。
-三、币种强弱：最多列3个相对强势和3个相对弱势币种，只能使用输入币种；样本不足时少列。
-四、值得观察的机会：分别说明多头和空头机会；必须区分“已满足条件”和“等待条件”，没有合格机会就明确说没有，不要凑单。
-五、风险提醒：假突破、价格过度延伸、周期冲突、成交量不足、关键位空间不足等。
-六、下一步观察：给出可验证的价格行为或周期条件，不要给数据里没有的精确价位。
-请把“当前事实”和“条件推演”分开；不要将程序信心等级当成胜率，也不要建议提高杠杆。用简明中文表达。
-行情快照：\n${JSON.stringify(payload, null, 2)}`;
+}
+
+function readAiOiHistory() {
+  try {
+    const value = JSON.parse(localStorage.getItem(AI_OI_HISTORY_KEY) || "{}");
+    return value && typeof value === "object" ? value : {};
+  } catch (e) { return {}; }
+}
+
+function calcOiChange(samples, now, targetMs, toleranceMs, source, unit) {
+  if (!Array.isArray(samples)) return null;
+  const candidate = samples.filter(x => x && x.source === source && x.unit === unit && Number.isFinite(x.ts) && Number.isFinite(x.value) && x.ts <= now - targetMs && x.ts >= now - targetMs - toleranceMs)
+    .sort((a,b) => b.ts - a.ts)[0];
+  if (!candidate || candidate.value === 0) return null;
+  return { pct:(samples.currentValue - candidate.value) / candidate.value * 100, comparedAt:candidate.ts };
+}
+
+function readAiMarketSnapshot() {
+  try { return JSON.parse(localStorage.getItem(AI_MARKET_SNAPSHOT_KEY) || "null"); }
+  catch (e) { return null; }
+}
+
+function buildSnapshotChanges(rows, previous, now) {
+  if (!previous || !Array.isArray(previous.symbols)) return { firstAnalysis:true, items:[] };
+  const oldMap = new Map(previous.symbols.map(x => [x.symbol, x]));
+  const items = [];
+  for (const r of rows) {
+    const old = oldMap.get(r.symbol);
+    if (!old) continue;
+    const pricePct = Number.isFinite(old.price) && old.price !== 0 ? (r.price - old.price) / old.price * 100 : null;
+    const flips = [];
+    for (const key of ["trend4h", "trend1h", "trend15m"]) if (old[key] && r[key] && old[key] !== r[key]) flips.push(`${key}:${old[key]}→${r[key]}`);
+    const oiPct = old.oiSource && old.oiSource === r.oiSource && old.oiUnit === r.oiUnit && Number.isFinite(old.openInterest) && old.openInterest !== 0 && Number.isFinite(r.openInterest)
+      ? (r.openInterest - old.openInterest) / old.openInterest * 100 : null;
+    items.push({ coin:r.coin, priceChangePct:pricePct, oiChangeSincePreviousPct:oiPct, trendFlips:flips });
+  }
+  return { firstAnalysis:false, previousAt:previous.savedAt || null, items };
+}
+
+async function buildMarketPrompt() {
+  if (!Array.isArray(lastResults) || !lastResults.some(r => r && r.price > 0)) throw new Error("还没有有效行情数据，请先回到第一页点击刷新行情。");
+  const ageMs = Date.now() - lastResultsUpdatedAt;
+  if (!lastResultsUpdatedAt || ageMs > 2 * 60 * 1000) throw new Error("当前行情快照已超过2分钟，请先回到第一页刷新行情，再进行AI分析。");
+
+  const valid = lastResults.filter(r => r && r.price > 0);
+  const now = Date.now();
+  const previousSnapshot = readAiMarketSnapshot();
+  const oiHistory = readAiOiHistory();
+  const manualEvent = String(document.getElementById("aiManualEvent")?.value || "");
+
+  // 所有新增数据源并行；每个请求单独8秒超时，失败返回null，不阻断整次分析。
+  const [derivativeRows, fngRaw, globalRaw] = await Promise.all([
+    Promise.all(valid.map(r => fetchDerivativeForSymbol(r).catch(() => ({ fundingRate:null, openInterest:null, longShortRatio:null })))),
+    fetchOptionalJson("https://api.alternative.me/fng/?limit=1"),
+    fetchOptionalJson("https://api.coingecko.com/api/v3/global")
+  ]);
+
+  const rows = valid.map((r, i) => {
+    const d = derivativeRows[i] || {};
+    const samples = Array.isArray(oiHistory[r.symbolId]) ? oiHistory[r.symbolId] : [];
+    const histForCalc = samples.slice();
+    histForCalc.currentValue = d.openInterest;
+    const oi1h = d.openInterest !== null ? calcOiChange(histForCalc, now, 60*60*1000, 30*60*1000, d.oiSource, d.oiUnit) : null;
+    const oi24h = d.openInterest !== null ? calcOiChange(histForCalc, now, 24*60*60*1000, 2*60*60*1000, d.oiSource, d.oiUnit) : null;
+    const candles = Array.isArray(r.marketKlines15m) ? r.marketKlines15m.slice(-20).map(k => ({
+      time:new Date(k.time).toISOString(), open:k.open, high:k.high, low:k.low, close:k.close, volume:k.volume
+    })) : [];
+    return {
+      coin:r.name, symbol:r.symbolId, price:r.price, change24hPct:r.changePct,
+      trend4h:r.trend4, trend1h:r.trend1, structure1h:r.structure1Bias || "未知", trend15m:r.trend15,
+      side:r.side, signal:r.type, branch:r.branch || null,
+      confidence:r.confidenceLabel || r.swing?.confidenceLabel || null,
+      rsi5m:r.rsiValue, volumeSurge5m:r.volOk, divergence:r.div?.bull ? "底背离" : r.div?.bear ? "顶背离" : "无",
+      entry:r.entry, stop:r.stop, tp1:r.tp1, tp2:r.tp2, tp3:r.tp3, netRR:r.rr,
+      dayLow:r.dayLow, dayHigh:r.dayHigh,
+      last20Closed15m: candles.length ? candles : "数据缺失",
+      fundingRate:d.fundingRate, fundingSource:d.fundingSource || "数据缺失",
+      openInterest:d.openInterest, oiSource:d.oiSource || "数据缺失", oiUnit:d.oiUnit || "数据缺失",
+      oiChange1hPct:oi1h ? oi1h.pct : "数据缺失", oiChange24hPct:oi24h ? oi24h.pct : "数据缺失",
+      longShortRatio:d.longShortRatio ?? "数据缺失", longShortSource:d.longShortSource || "数据缺失"
+    };
+  });
+
+  const fngRow = unwrapRows(fngRaw)[0];
+  const fng = fngRow ? { value:Number(fngRow.value), classification:fngRow.value_classification || null, timestamp:fngRow.timestamp || null } : "数据缺失";
+  const global = globalRaw?.data ? {
+    btcDominance:Number.isFinite(Number(globalRaw.data.market_cap_percentage?.btc)) ? Number(globalRaw.data.market_cap_percentage.btc) : null,
+    totalMarketCapChange24hPct:Number.isFinite(Number(globalRaw.data.market_cap_change_percentage_24h_usd)) ? Number(globalRaw.data.market_cap_change_percentage_24h_usd) : null
+  } : "数据缺失";
+  const changes = buildSnapshotChanges(rows, previousSnapshot, now);
+  const payload = {
+    generatedAt:new Date(now).toISOString(), marketSnapshotAt:new Date(lastResultsUpdatedAt).toISOString(),
+    ageSeconds:Math.round(ageMs/1000), dataSource:"WEEX公开合约行情与已收盘K线；衍生品优先WEEX、失败回退OKX；市场广度来自公开接口",
+    symbols:rows,
+    marketBreadth:{ fearGreed:fng, btcDominance:global === "数据缺失" ? "数据缺失" : (global.btcDominance ?? "数据缺失"), totalMarketCapChange24hPct:global === "数据缺失" ? "数据缺失" : (global.totalMarketCapChange24hPct ?? "数据缺失") },
+    changesSincePrevious:changes,
+    userProvidedEvent:manualEvent.trim() ? { label:"用户提供事件", text:manualEvent } : "无（用户未提供事件）"
+  };
+
+  const nextSnapshot = {
+    savedAt:now,
+    symbols:rows.map(r => ({ symbol:r.symbol, price:r.price, openInterest:typeof r.openInterest === "number" ? r.openInterest : null,
+      oiSource:r.oiSource, oiUnit:r.oiUnit, fundingRate:typeof r.fundingRate === "number" ? r.fundingRate : null, trend4h:r.trend4h, trend1h:r.trend1h, trend15m:r.trend15m }))
+  };
+  const nextOiHistory = { ...oiHistory };
+  for (const r of rows) {
+    const d = derivativeRows[valid.findIndex(x => x.symbolId === r.symbol)];
+    if (!d || !Number.isFinite(d.openInterest) || !Number.isFinite(d.oiTs)) continue;
+    const list = Array.isArray(nextOiHistory[r.symbol]) ? nextOiHistory[r.symbol].slice() : [];
+    list.push({ ts:d.oiTs, value:d.openInterest, source:d.oiSource, unit:d.oiUnit });
+    // 仅分析触发时采样；保留最近26小时，绝不后台定时采集。
+    nextOiHistory[r.symbol] = list.filter((x, i, a) => x.ts >= now - 26*60*60*1000 && a.findIndex(y => y.ts === x.ts && y.source === x.source) === i).slice(-40);
+  }
+
+  const prompt = `你是谨慎、客观的加密货币市场分析师。只允许使用下面数据包中的数字、价格、时间和事件；禁止编造任何数字、价格、新闻、成交量、指标或外部事实。数据缺失必须写“数据缺失”，不可猜测。
+
+表达要求：简洁、易懂，先结论后理由，尽量使用中文并解释必要术语；全文不超过900个汉字。保留“当前事实 / 推断 / 不确定性”结构。
+
+硬性规则：
+1. 每个币种提供最近20根已收盘15分钟K线。必须独立核对原始K线与trend4h/trend1h/trend15m标签。若K线显示收复关键位、低点抬高、结构转强等迹象却与偏空标签矛盾，或相反，必须在对应章节明确写出“原始K线与趋势标签矛盾”，说明具体证据；不得只复述标签。20根15M线不能证明4H结构时，明确说明证据范围有限。
+2. 有上次快照时，每个章节先说“什么变了”，再说现状；没有快照时，在“不确定性”中注明“首次分析，无对比基准”。
+3. 下跌且OI明显下降，解释为可能爆仓踩踏/去杠杆；下跌且OI上升，解释为可能有新空头进场。资金费率明显极端为负提示空头拥挤、防轧空；明显极端为正提示多头拥挤。只在明显偏离常态时提及，常态不要逐项念数字；这些都是推断，不得当成确定事实。
+4. 用户提供事件必须纳入考虑并标明“用户提供事件”；若无事件，禁止虚构任何事件或消息。
+5. 价格、百分比、费率、OI和时间只能引用数据包；没有合格机会就明确等待，不凑数，不下单，不修改策略，不建议提高杠杆。
+
+按现有分节输出：一、整体市场环境；二、BTC风向；三、币种强弱；四、值得观察的机会（区分已满足/等待）；五、风险提醒；六、下一步观察。每节尽量包含“当前事实 / 推断 / 不确定性”。全文最后必须且只能追加一行“今日基调：……”作为最后一行。
+
+数据包：
+${JSON.stringify(payload)}`;
+  return { prompt, payload, nextSnapshot, nextOiHistory };
 }
 
 async function requestDeepSeekWorkspace(prompt) {
@@ -2685,9 +2863,10 @@ async function runAiMarketAnalysis(fromAuto = false) {
     if (!fromAuto) setAiWorkspaceStatus("分析间隔太短，请稍后再试", null);
     return;
   }
-  let prompt, sourceCount = 0;
+  let prompt, prepared = null, sourceCount = 0;
   try {
-    prompt = buildMarketPrompt();
+    prepared = await buildMarketPrompt();
+    prompt = prepared.prompt;
     sourceCount = lastResults.filter(r => r && r.price > 0).length;
   } catch (e) {
     setAiWorkspaceStatus(e.message || "行情数据准备失败", false);
@@ -2702,6 +2881,10 @@ async function runAiMarketAnalysis(fromAuto = false) {
   try {
     const answer = await requestDeepSeekWorkspace(prompt);
     aiWorkspace.market = { text:answer, ts:Date.now(), sourceCount };
+    try {
+      localStorage.setItem(AI_MARKET_SNAPSHOT_KEY, JSON.stringify(prepared.nextSnapshot));
+      localStorage.setItem(AI_OI_HISTORY_KEY, JSON.stringify(prepared.nextOiHistory));
+    } catch (e) { console.warn("AI市场快照保存失败", e); }
     saveAiWorkspace();
     setAiWorkspaceStatus("AI市场分析完成", true);
   } catch (e) {
