@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>浪浪风格 WEEX AI 策略雷达 v4.2.4</title>
+<title>浪浪风格 WEEX AI 策略雷达 v4.2.5</title>
 <style>
 /* ===== 主题变量 ===== */
 :root {
@@ -224,6 +224,41 @@ position: relative;
   .main-nav .tab-btn { padding:9px 6px; }
 }
 
+
+/* ===== 策略池 / 追踪池切换 ===== */
+.pool-switch-wrap { margin-top:24px; }
+.pool-switch { display:flex; gap:8px; margin-bottom:12px; padding:4px; background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); }
+.pool-switch-btn { flex:1; min-width:0; border:1px solid transparent; border-radius:9px; padding:11px 10px; background:transparent; color:var(--muted); font-size:14px; font-weight:700; cursor:pointer; }
+.pool-switch-btn.active { color:var(--text); background:var(--bg); border-color:var(--border); box-shadow:0 1px 4px rgba(0,0,0,.08); }
+.pool-count { display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; margin-left:4px; padding:0 5px; border-radius:10px; background:var(--border); font-size:11px; }
+.pool-view[hidden] { display:none!important; }
+.pool-view { min-height:80px; }
+.track-panel { margin: 16px 0 22px; }
+.track-card { border:1px solid var(--border); border-radius:12px; padding:12px; margin:9px 0; background:var(--card); box-shadow:var(--shadow); }
+.track-card.warning { border-left:4px solid var(--yellow); }
+.track-card.danger { border-left:4px solid var(--red); }
+.track-card.normal { border-left:4px solid var(--green); }
+.track-actions { display:flex; gap:7px; flex-wrap:wrap; margin-top:9px; }
+.track-note { font-size:12px; line-height:1.65; margin-top:7px; color:var(--muted); white-space:pre-line; }
+.track-log { border-top:1px solid var(--border); margin-top:9px; padding-top:7px; font-size:11px; color:var(--muted); line-height:1.65; }
+.track-btn { padding:6px 9px; font-size:11px; border-radius:7px; }
+
+/* ===== EQN 独立策略池 ===== */
+.eqn-summary { font-size:12px; color:var(--muted); line-height:1.65; margin:6px 0 10px; }
+.eqn-feed-item { border:1px solid var(--border); border-radius:9px; padding:9px; margin:7px 0; background:var(--item-bg); }
+.eqn-feed-title { font-size:12px; line-height:1.55; font-weight:650; }
+.eqn-feed-meta { color:var(--muted); font-size:10px; margin-top:4px; }
+.eqn-strategy { border:1px solid var(--border); border-left:4px solid var(--blue); border-radius:11px; padding:12px; margin:9px 0; background:var(--card); box-shadow:var(--shadow); }
+.eqn-strategy.long { border-left-color:var(--green); }
+.eqn-strategy.short { border-left-color:var(--red); }
+.eqn-strategy.done { opacity:.72; }
+.eqn-levels { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:9px; }
+.eqn-level { background:var(--item-bg); border-radius:7px; padding:8px; font-size:11px; }
+.eqn-level b { display:block; font-size:13px; margin-top:2px; }
+.eqn-source { font-size:10px; color:var(--muted); line-height:1.55; margin-top:8px; }
+.eqn-actions { display:flex; gap:7px; flex-wrap:wrap; margin-top:9px; }
+.eqn-actions .btn { padding:6px 9px; font-size:11px; }
+@media (max-width:600px) { .pool-switch-btn { padding:10px 5px; font-size:12px; } .eqn-levels { gap:6px; } }
 </style>
 </head>
 <body>
@@ -270,6 +305,13 @@ position: relative;
 <div class="loading-overlay">加载中...</div>
 </div>
 
+<div class="pool-switch-wrap">
+<div class="pool-switch" role="tablist" aria-label="策略内容切换">
+<button type="button" class="pool-switch-btn active" id="strategyPoolTab" onclick="switchPoolView('strategy')">📋 策略池</button>
+<button type="button" class="pool-switch-btn" id="trackingPoolTab" onclick="switchPoolView('tracking')">🎯 追踪池 <span id="trackingCount" class="pool-count">0</span></button>
+<button type="button" class="pool-switch-btn" id="eqnPoolTab" onclick="switchPoolView('eqn')">🌐 EQN策略 <span id="eqnCount" class="pool-count">0</span></button>
+</div>
+<div id="strategyPoolView" class="pool-view active">
 <div class="record-section">
 <div class="record-header">
 <div class="record-title">📋 策略记录池（信号跟踪）</div>
@@ -279,9 +321,37 @@ position: relative;
 <div style="color:var(--muted);font-size:13px;padding:6px">暂无存入的有效多/空信号</div>
 </div>
 </div>
+</div>
+<div id="trackingPoolView" class="pool-view" hidden>
+<div class="track-panel">
+<div class="record-header">
+<div class="record-title">🎯 我的策略追踪池</div>
+<div style="font-size:11px;color:var(--muted)">只显示你手动加入的策略</div>
+</div>
+<div id="trackingPool"><div style="color:var(--muted);font-size:13px;padding:6px">还没有追踪策略。请在策略池中点击“加入追踪”。</div></div>
+</div>
+</div>
+<div id="eqnPoolView" class="pool-view" hidden>
+<div class="track-panel">
+<div class="record-header">
+<div class="record-title">🌐 EQN 独立策略实验区</div>
+<div style="font-size:11px;color:var(--muted)" id="eqnStatus">等待读取 EQN 数据</div>
+</div>
+<div class="eqn-summary" id="eqnSummary">独立实验，不影响原策略池。EQN 提供异动/OI/新闻线索，入场、止损和止盈价使用 WEEX 行情计算。数据未读到时不会伪造策略。</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px">
+<button class="btn btn-secondary" id="eqnRefreshBtn" onclick="refreshEqnNow()">刷新 EQN 数据</button>
+<button class="btn btn-secondary" onclick="clearEqnPool()">清空 EQN 策略</button>
+</div>
+<div class="record-title" style="font-size:13px;margin:12px 0 6px">EQN 生成的独立策略</div>
+<div id="eqnStrategyPool"><div style="color:var(--muted);font-size:13px;padding:6px">正在等待 EQN 异动数据……</div></div>
+<div class="record-title" style="font-size:13px;margin:16px 0 6px">最近 EQN 异动 / 新闻</div>
+<div id="eqnFeedList"><div style="color:var(--muted);font-size:13px;padding:6px">尚未读取</div></div>
+</div>
+</div>
+</div>
 
 <div class="footer-note">
-行情来源：WEEX 合约公开接口（只读，不自动下单） · v4.2.4
+行情来源：WEEX 合约公开接口（只读，不自动下单） · v4.2.5
 </div>
 
 <div class="actions">
@@ -388,6 +458,18 @@ let busy = false;
 let soundEnable = true;
 let lastSignalKey = new Set();
 let recordPool = [];
+// EQN 实验区完全独立：不写入原 recordPool，也不改变原追踪池
+let eqnStrategyPool = [];
+let eqnFeedItems = [];
+let eqnLastFetchAt = 0;
+let eqnFetchBusy = false;
+let eqnRefreshBusy = false;
+let eqnRefreshTimer = null;
+let eqnLastError = "";
+const EQN_CHANNELS = ["oi", "pricechange", "major", "main"];
+const EQN_FEED_URL = "https://proxy.cors.dev/https://api.eqn.news/public/rss?ch=";
+const EQN_TTL_MS = 90 * 60 * 1000;
+let lastMarketResults = [];
 let lastResults = [];
 let contractInfoLoaded = false;
 let availableSymbols = null;
@@ -515,7 +597,7 @@ function toggleAuto() {
 autoRefresh =!autoRefresh;
 document.getElementById("autoText").textContent = autoRefresh? "开": "关";
 if (autoRefresh) {
-  if (!document.hidden) { startTimer(); connectWs(); loadAll(); }
+  if (!document.hidden) { startTimer(); startEqnRefreshTimer(); connectWs(); loadAll(); }
 }
 else { if (timer) { clearInterval(timer); timer = null;} disconnectWs();}
 }
@@ -647,6 +729,7 @@ ${item.branch? `<span class="rec-branch">[${BRANCH_SHORT[item.branch] || item.br
 </div>
 ${(() => { const fh = followHint(item); const parts = []; if (fh) parts.push(`<span style="color:${fh.cls === "good"? "var(--green)": fh.cls === "mid"? "var(--yellow)": "var(--red)"};font-weight:700">${fh.text}</span>`); if (item.grade) parts.push(`级别：${item.grade}${item.etaText? " · 预计" + item.etaText: ""}`); if (item.confidenceLabel) parts.push(`信心：${item.confidenceLabel}`); if (item.aiText) parts.push(`AI把关：${String(item.aiText).split("\n")[0].replace(/^评级：/, "")}`); else if (item.aiState === "pending") parts.push("AI把关：审核中…"); if (item.judgeText) parts.push(item.judgeText); return parts.length? `<div class="rec-sum">${parts.join(" ｜ ")}</div>`: "";})()}
 <div class="key-line">入场 <b>${item.entryText}</b> · 止损 <b style="color:var(--red)">${item.stopText}</b> · TP1 <b style="color:var(--green)">${item.tp1Text}</b></div>
+<div class="track-actions"><button class="btn btn-secondary track-btn" onclick="event.stopPropagation();toggleTracking('${item.id}')">${item.tracked ? "✓ 已加入追踪（点此取消）" : "＋ 加入我的追踪池"}</button></div>
 
 ${item.warnMsg? `<div class="warn-tag">${item.warnMsg}</div>`: ""}
 ${item.conflictWith? `<div class="conflict-tag">⚠️ 相冲：与${item.conflictWith}方向相反</div>`: ""}
@@ -692,6 +775,314 @@ ${item.invalidText? `<div class="reason" style="margin-top:4px; font-size:11px;"
 }
 wrap.innerHTML = html;
 }
+
+function loadEqnStrategies() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('weex_eqn_strategy_pool') || "[]");
+    eqnStrategyPool = Array.isArray(saved) ? saved : [];
+  } catch (e) { eqnStrategyPool = []; }
+}
+function saveEqnStrategies() {
+  try { localStorage.setItem('weex_eqn_strategy_pool', JSON.stringify(eqnStrategyPool)); } catch (e) {}
+}
+
+// ===== 策略池 / 追踪池同位置切换 =====
+function switchPoolView(view) {
+  const views = {
+    strategy: ["strategyPoolView", "strategyPoolTab"],
+    tracking: ["trackingPoolView", "trackingPoolTab"],
+    eqn: ["eqnPoolView", "eqnPoolTab"]
+  };
+  for (const [key, ids] of Object.entries(views)) {
+    const viewEl = document.getElementById(ids[0]);
+    const tabEl = document.getElementById(ids[1]);
+    if (viewEl) { viewEl.hidden = key !== view; viewEl.classList.toggle("active", key === view); }
+    if (tabEl) tabEl.classList.toggle("active", key === view);
+  }
+}
+function updateTrackingCount() {
+  const el = document.getElementById("trackingCount");
+  if (el) el.textContent = String(recordPool.filter(r => r.tracked).length);
+}
+
+
+// ===== EQN 独立实验区：RSS 读取异动/OI/新闻，WEEX 行情负责定价 =====
+function eqnParseRss(xmlText, channel) {
+  const doc = new DOMParser().parseFromString(xmlText, "text/xml");
+  if (doc.querySelector("parsererror")) throw new Error("EQN RSS 格式无法解析");
+  return [...doc.querySelectorAll("item")].map(node => {
+    const title = node.querySelector("title")?.textContent?.trim() || "";
+    const description = node.querySelector("description")?.textContent?.trim() || title;
+    const link = node.querySelector("link")?.textContent?.trim() || "https://eqn.news";
+    const pubDate = node.querySelector("pubDate")?.textContent?.trim() || "";
+    const ts = pubDate ? Date.parse(pubDate) : Date.now();
+    return { title, description, link, channel, ts: Number.isFinite(ts) ? ts : Date.now() };
+  }).filter(x => x.title || x.description);
+}
+async function fetchEqnFeeds(force = false) {
+  if (eqnFetchBusy) return eqnFeedItems;
+  if (!force && eqnLastFetchAt && Date.now() - eqnLastFetchAt < 60000) return eqnFeedItems;
+  eqnFetchBusy = true;
+  try {
+    const all = [];
+    const responses = await Promise.all(EQN_CHANNELS.map(async channel => {
+      const url = EQN_FEED_URL + encodeURIComponent(channel) + "&lang=zh";
+      const res = await fetch(url, { cache:"no-store", headers:{"Accept":"application/rss+xml, application/xml, text/xml"}, signal:AbortSignal.timeout(12000) });
+      if (!res.ok) throw new Error(channel + "频道 HTTP " + res.status);
+      return eqnParseRss(await res.text(), channel);
+    }));
+    for (const rows of responses) all.push(...rows);
+    const seen = new Set();
+    eqnFeedItems = all.sort((a,b) => b.ts-a.ts).filter(x => {
+      const key = x.link || x.title;
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    }).slice(0, 80);
+    eqnLastFetchAt = Date.now();
+    eqnLastError = "";
+    return eqnFeedItems;
+  } catch (e) {
+    eqnLastError = e?.message || "EQN 数据读取失败";
+    throw e;
+  } finally { eqnFetchBusy = false; }
+}
+function eqnCoinFromText(text) {
+  const t = String(text || "").toUpperCase();
+  for (const sym of ["BTC", "ETH", "SOL", "ZEC"]) {
+    const re = new RegExp("(^|[^A-Z0-9])" + sym + "(?:USDT)?([^A-Z0-9]|$)");
+    if (re.test(t)) return sym + "USDT";
+  }
+  return null;
+}
+function eqnParsePercent(text, regex) {
+  const m = String(text || "").match(regex);
+  if (!m) return null;
+  const n = Number(String(m[1]).replace(/−/g, "-"));
+  return Number.isFinite(n) ? n : null;
+}
+function eqnEventSignal(item) {
+  const text = (item.title || "") + " " + (item.description || "");
+  const symbolId = eqnCoinFromText(text);
+  if (!symbolId) return null;
+  const oiPct = eqnParsePercent(text, /(?:未平仓(?:合约)?量|OI)\s*([+＋-]?\s*\d+(?:\.\d+)?)\s*%/i);
+  let pricePct = eqnParsePercent(text, /(?:过去\s*\d+\s*秒\s*)?价格(?:上涨|上升|下跌|下降)\s*([+＋−-]?\s*\d+(?:\.\d+)?)\s*%/i);
+  if (pricePct === null) pricePct = eqnParsePercent(text, /(?:10秒|30秒|60秒|1小时|24小时|24H)[^\r\n%]{0,35}([+＋−-]?\s*\d+(?:\.\d+)?)\s*%/i);
+  if (pricePct === null) pricePct = eqnParsePercent(text, /([+＋−-]\s*\d+(?:\.\d+)?)\s*%/);
+  if (pricePct === null) return null;
+  const age = Date.now() - item.ts;
+  if (age < -5 * 60 * 1000 || age > EQN_TTL_MS) return null;
+  const channel = item.channel;
+  let side = null, reason = "";
+  if (oiPct !== null && Math.abs(oiPct) >= 2 && Math.abs(pricePct) >= 0.5) {
+    if (oiPct > 0 && pricePct > 0) { side = "LONG"; reason = `EQN监测到 OI 增加 ${oiPct.toFixed(1)}%，价格同步上涨 ${pricePct.toFixed(1)}%`; }
+    else if (oiPct > 0 && pricePct < 0) { side = "SHORT"; reason = `EQN监测到 OI 增加 ${oiPct.toFixed(1)}%，价格同步下跌 ${Math.abs(pricePct).toFixed(1)}%`; }
+  } else if ((channel === "pricechange" || channel === "major") && Math.abs(pricePct) >= 0.8 && Math.abs(pricePct) <= 4) {
+    side = pricePct > 0 ? "LONG" : "SHORT";
+    reason = `EQN价格异动 ${pricePct > 0 ? "+" : ""}${pricePct.toFixed(1)}%`;
+  }
+  if (!side) return null;
+  return { symbolId, side, oiPct, pricePct, reason, item };
+}
+function eqnBuildStrategy(signal, market) {
+  if (!market || !market.price || !Number.isFinite(market.atr15Val) || market.atr15Val <= 0) return null;
+  const isLong = signal.side === "LONG";
+  const aligned = isLong ? market.trend4 === "BULL" : market.trend4 === "BEAR";
+  const trend1Aligned = isLong ? market.trend1 === "BULL" : market.trend1 === "BEAR";
+  // 4H 明确反向时不生成正式方向策略，避免把单一异动当作逆势入场依据
+  if ((market.trend4 === "BEAR" && isLong) || (market.trend4 === "BULL" && !isLong)) return null;
+  const entryMid = market.price;
+  const atr15 = market.atr15Val;
+  const entry = [entryMid - atr15 * 0.12, entryMid + atr15 * 0.12];
+  const risk = atr15 * 1.15;
+  const stop = isLong ? entryMid - risk : entryMid + risk;
+  const tp1 = isLong ? entryMid + risk * 1.5 : entryMid - risk * 1.5;
+  const tp2 = isLong ? entryMid + risk * 2.2 : entryMid - risk * 2.2;
+  const tp3 = isLong ? entryMid + risk * 3 : entryMid - risk * 3;
+  const key = signal.symbolId + "_" + signal.side + "_" + signal.item.link;
+  if (eqnStrategyPool.some(x => x.key === key)) return null;
+  return {
+    id: "eqn_" + Date.now() + "_" + Math.random().toString(36).slice(2,7), key,
+    ts: Date.now(), eventTs: signal.item.ts, symbolId: signal.symbolId,
+    name: signal.symbolId.replace("USDT", ""), side: signal.side,
+    entryMid, entryLow: entry[0], entryHigh: entry[1], stop, tp1, tp2, tp3,
+    rr: 1.5, status: "active", hitTP1:false, hitTP2:false, hitTP3:false,
+    reason: signal.reason + (signal.oiPct !== null ? `；OI ${signal.oiPct > 0 ? "+" : ""}${signal.oiPct.toFixed(1)}%` : ""),
+    trend4: market.trend4, trend1: market.trend1, aligned4h: aligned, aligned1h: trend1Aligned,
+    sourceTitle: signal.item.title, sourceUrl: signal.item.link, sourceChannel: signal.item.channel,
+    pricePct: signal.pricePct, oiPct: signal.oiPct
+  };
+}
+function eqnEscape(value) { return String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch])); }
+function eqnSafeUrl(value) { try { const u = new URL(String(value || "")); return u.protocol === "https:" && (u.hostname === "eqn.news" || u.hostname.endsWith(".eqn.news")) ? u.href : "https://eqn.news"; } catch(e) { return "https://eqn.news"; } }
+function eqnFmtTime(ts) { return ts ? new Date(ts).toLocaleString("zh-CN", {hour12:false}) : "--"; }
+function renderEqnPool() {
+  const count = document.getElementById("eqnCount");
+  if (count) count.textContent = String(eqnStrategyPool.length);
+  const status = document.getElementById("eqnStatus");
+  if (status) status.textContent = eqnRefreshBusy ? "正在刷新…" : (eqnLastError ? "读取失败" : (eqnLastFetchAt ? "EQN已更新 " + new Date(eqnLastFetchAt).toLocaleTimeString("zh-CN", {hour12:false}) : "等待读取"));
+  const summary = document.getElementById("eqnSummary");
+  if (summary) summary.textContent = eqnLastError
+    ? "EQN 数据读取失败：" + eqnLastError + "。可能是当前浏览器跨域限制或网络问题；原策略池与追踪池不受影响。"
+    : `EQN 免费公开 RSS：OI、价格异动、大幅波动、主新闻；最近读取 ${eqnFeedItems.length} 条。只将方向明确且未超过 90 分钟的异动作为候选，4H 趋势反向时不生成正式策略。入场/止损/止盈来自 WEEX 当前行情与 15M ATR。`;
+  const wrap = document.getElementById("eqnStrategyPool");
+  if (wrap) {
+    if (!eqnStrategyPool.length) wrap.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:6px">目前没有达到条件的 EQN 策略。异动线索会保留在下方，不会为了凑数量硬生成。</div>';
+    else wrap.innerHTML = eqnStrategyPool.slice().sort((a,b)=>b.ts-a.ts).map(r => {
+      const sideLabel = r.side === "LONG" ? "做多" : "做空";
+      const statusLabel = r.status === "sl" ? "止损触发" : r.status === "tp3" ? "TP3完成" : r.status === "tp2" ? "TP2触发" : r.status === "tp1" ? "TP1触发" : "监控中";
+      return `<div class="eqn-strategy ${r.side === "LONG" ? "long" : "short"} ${r.status !== "active" ? "done" : ""}
+      <div class="record-top"><div class="rec-title">${r.name} ${r.side === "LONG" ? "🟢" : "🔴"}${sideLabel} <span class="rec-rr">EQN独立信号</span></div><span class="badge ${r.side === "LONG" ? "long" : "short"}">${statusLabel}</span></div>
+      <div class="key-line">生成：<b>${eqnFmtTime(r.ts)}</b> · 4H：<b>${r.trend4 === "BULL" ? "偏多" : r.trend4 === "BEAR" ? "偏空" : "中性"}</b> · 1H：<b>${r.trend1 === "BULL" ? "偏多" : r.trend1 === "BEAR" ? "偏空" : "中性"}</b></div>
+      <div class="eqn-levels"><div class="eqn-level">入场参考区<b>${formatPrice(r.entryLow)} ~ ${formatPrice(r.entryHigh)}</b></div><div class="eqn-level">止损 SL<b class="red">${formatPrice(r.stop)}</b></div><div class="eqn-level">止盈 TP1<b class="green">${formatPrice(r.tp1)}</b></div><div class="eqn-level">止盈 TP2 / TP3<b class="green">${formatPrice(r.tp2)} / ${formatPrice(r.tp3)}</b></div></div>
+      <div class="key-line">盈亏比（TP1）：<b>1 : ${r.rr.toFixed(2)}</b> · ${eqnEscape(r.reason)}</div>
+      <div class="eqn-source">来源：${r.sourceChannel} · ${eqnFmtTime(r.eventTs)}<br>${eqnEscape(r.sourceTitle)}<br><a href="${eqnSafeUrl(r.sourceUrl)}" target="_blank" rel="noopener">查看 EQN 原始消息</a></div>
+      <div class="eqn-actions"><button class="btn btn-secondary" onclick="deleteEqnStrategy('${r.id}')">删除这条策略</button></div>
+      </div>`;
+    }).join("");
+  }
+  const feed = document.getElementById("eqnFeedList");
+  if (feed) feed.innerHTML = eqnFeedItems.length ? eqnFeedItems.slice(0,18).map(x => `<div class="eqn-feed-item"><div class="eqn-feed-title">${eqnEscape(x.title || x.description)}</div><div class="eqn-feed-meta">${eqnEscape(x.channel)} · ${eqnFmtTime(x.ts)} · <a href="${eqnSafeUrl(x.link)}" target="_blank" rel="noopener">查看原文</a></div></div>`).join("") : '<div style="color:var(--muted);font-size:13px;padding:6px">暂无 EQN 消息</div>';
+}
+function checkEqnStrategyTriggers(symbolId, price) {
+  let changed = false;
+  for (const r of eqnStrategyPool) {
+    if (r.symbolId !== symbolId || r.status === "sl" || r.status === "tp3") continue;
+    const long = r.side === "LONG";
+    if ((long && price <= r.stop) || (!long && price >= r.stop)) { r.status = "sl"; changed = true; continue; }
+    if (!r.hitTP1 && (long ? price >= r.tp1 : price <= r.tp1)) { r.hitTP1 = true; r.status = "tp1"; changed = true; }
+    if (!r.hitTP2 && (long ? price >= r.tp2 : price <= r.tp2)) { r.hitTP2 = true; r.status = "tp2"; changed = true; }
+    if (!r.hitTP3 && (long ? price >= r.tp3 : price <= r.tp3)) { r.hitTP3 = true; r.status = "tp3"; changed = true; }
+  }
+  if (changed) { saveEqnStrategies(); renderEqnPool(); }
+}
+async function updateEqnStrategies(markets, force = false) {
+  // 页面在后台时不请求 EQN；回到前台后由 visibilitychange 立即补刷
+  if (document.hidden) { renderEqnPool(); return; }
+  try {
+    await fetchEqnFeeds(force);
+    for (const item of eqnFeedItems) {
+      const signal = eqnEventSignal(item);
+      if (!signal) continue;
+      const market = markets.find(x => x.symbolId === signal.symbolId && x.price > 0);
+      const rec = eqnBuildStrategy(signal, market);
+      if (rec) eqnStrategyPool.unshift(rec);
+    }
+    // 防止重复/过量历史；策略数据独立持久化
+    eqnStrategyPool = eqnStrategyPool.slice(0, 100);
+    saveEqnStrategies();
+    renderEqnPool();
+  } catch (e) {
+    eqnLastError = e?.message || "EQN读取失败";
+    renderEqnPool();
+  }
+}
+async function refreshEqnNow() {
+  if (eqnRefreshBusy) return;
+  eqnRefreshBusy = true;
+  const btn = document.getElementById("eqnRefreshBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "刷新中…"; }
+  renderEqnPool();
+  try {
+    eqnLastFetchAt = 0;
+    if (typeof lastMarketResults !== "undefined" && Array.isArray(lastMarketResults) && lastMarketResults.length) {
+      await updateEqnStrategies(lastMarketResults, true);
+    } else {
+      await fetchEqnFeeds(true);
+      renderEqnPool();
+    }
+  } catch (e) {
+    eqnLastError = e?.message || "EQN读取失败";
+    renderEqnPool();
+  } finally {
+    eqnRefreshBusy = false;
+    if (btn) { btn.disabled = false; btn.textContent = "刷新 EQN 数据"; }
+    renderEqnPool();
+  }
+}
+function startEqnRefreshTimer() {
+  if (eqnRefreshTimer) clearInterval(eqnRefreshTimer);
+  eqnRefreshTimer = setInterval(() => {
+    if (!document.hidden && !eqnRefreshBusy && !eqnFetchBusy && Array.isArray(lastMarketResults) && lastMarketResults.length) {
+      refreshEqnNow();
+    }
+  }, 60000);
+}
+function stopEqnRefreshTimer() {
+  if (eqnRefreshTimer) { clearInterval(eqnRefreshTimer); eqnRefreshTimer = null; }
+}
+function deleteEqnStrategy(id) { eqnStrategyPool = eqnStrategyPool.filter(x => x.id !== id); saveEqnStrategies(); renderEqnPool(); }
+function clearEqnPool() { if (!confirm("确定清空 EQN 独立策略池吗？不会影响原策略池和追踪池。")) return; eqnStrategyPool = []; saveEqnStrategies(); renderEqnPool(); }
+
+// ===== 用户主动追踪池：独立于自动策略记录池 =====
+function toggleTracking(id) {
+const r = recordPool.find(x => x.id === id);
+if (!r) return;
+r.tracked = !r.tracked;
+if (!Array.isArray(r.trackLog)) r.trackLog = [];
+if (r.tracked) {
+  r.trackState = "normal";
+  r.trackMessage = "已加入追踪，等待下一轮多周期复核";
+  addTrackLog(r, "normal", "加入追踪，开始监控多周期结构与动能");
+} else {
+  addTrackLog(r, "normal", "已从追踪池移除；原策略记录及止盈止损追踪保留");
+}
+saveRecords(); renderRecordPool(); renderTrackingPool();
+}
+function addTrackLog(r, level, message) {
+  const stamp = new Date().toLocaleString("zh-CN", {hour12:false});
+  r.trackLog = Array.isArray(r.trackLog) ? r.trackLog : [];
+  r.trackLog.unshift({time:stamp, level, message});
+  r.trackLog = r.trackLog.slice(0, 12);
+}
+function evaluateTrackedStrategy(rec, market) {
+  if (!rec || !rec.tracked || !market) return false;
+  let level = "normal", message = "原策略方向暂时未出现明显破坏，继续按原计划观察。";
+  const isShort = rec.side === "SHORT";
+  const t4 = market.trend4, t1 = market.trend1, t15 = market.trend15;
+  const rsiNow = market.rsiValue === null || market.rsiValue === undefined ? NaN : Number(market.rsiValue);
+  const div = market.div || {};
+  const opposite4 = isShort ? t4 === "BULL" : t4 === "BEAR";
+  const opposite1 = isShort ? t1 === "BULL" : t1 === "BEAR";
+  const opposite15 = isShort ? t15 === "BULL" : t15 === "BEAR";
+  const oppositeDiv = isShort ? !!div.bull : !!div.bear;
+  const rsiAgainst = Number.isFinite(rsiNow) && (isShort ? rsiNow >= 58 : rsiNow <= 42);
+  const votes = (opposite4 ? 2 : 0) + (opposite1 ? 2 : 0) + (opposite15 ? 1 : 0) + (oppositeDiv ? 1 : 0) + (rsiAgainst ? 1 : 0);
+  if (rec.timeSL) { level = "danger"; message = "原止损价已触发。若是真实持仓，请核对交易所成交与仓位状态。"; }
+  else if (rec.timeInv) { level = "danger"; message = "原策略失效条件已被收盘确认。建议考虑主动离场，不要继续按原方向硬扛。"; }
+  else if (votes >= 5) { level = "danger"; message = `反向信号多周期共振（${votes}/7）：4H/1H/15M结构或动能已明显转向。建议优先考虑减仓/离场，不必机械等待原止损。`; }
+  else if (votes >= 3) { level = "warning"; message = `反向风险正在累积（${votes}/7）：${opposite4?"4H方向反转；":""}${opposite1?"1H结构反向；":""}${opposite15?"15M短周期反向；":""}${oppositeDiv?"出现反向背离；":""}${rsiAgainst?"RSI进入不利区间；":""}建议停止加仓，留意减仓或离场确认。`; }
+  else if (votes >= 2) { level = "warning"; message = `原方向动能有所减弱（${votes}/7），暂未达到确认离场条件。建议谨慎持有，等待下一根已收盘K线确认。`; }
+  else if (rec.timeTP3) { level = "normal"; message = "TP3 已触及，策略目标基本完成，可考虑全部落袋。"; }
+  else if (rec.timeTP2) { level = "normal"; message = "TP2 已触及，可考虑继续减仓并保护剩余利润。"; }
+  else if (rec.timeTP1) { level = "normal"; message = "TP1 已触及，可考虑部分止盈，并评估余仓保本保护。"; }
+  else if ((rec.maxFav || 0) >= BE_TRIGGER) { level = "normal"; message = "行情已顺向推进，可评估将止损推至入场附近保护本金。"; }
+  const changed = rec.trackState !== level || rec.trackMessage !== message;
+  rec.trackState = level; rec.trackMessage = message;
+  rec.trackLastPrice = market.price;
+  rec.trackUpdatedAt = Date.now();
+  if (changed) addTrackLog(rec, level, message);
+  return changed;
+}
+function renderTrackingPool() {
+  const wrap = document.getElementById("trackingPool");
+  if (!wrap) return;
+  const items = recordPool.filter(r => r.tracked);
+  updateTrackingCount();
+  if (!items.length) { wrap.innerHTML = `<div style="color:var(--muted);font-size:13px;padding:6px">还没有追踪策略。可在下方策略记录中点击“加入追踪”。</div>`; return; }
+  wrap.innerHTML = items.map(r => {
+    const level = r.trackState || "normal";
+    const label = level === "danger" ? "建议重点考虑离场" : level === "warning" ? "风险预警" : "正常追踪";
+    const logs = (r.trackLog || []).slice(0,4).map(x => `${x.time} · ${x.message}`).join("\n");
+    return `<div class="track-card ${level}">
+      <div class="record-top"><div class="rec-title">${r.name} ${r.side === "LONG" ? "✅做多" : "❌做空"} <span class="rec-rr">${r.track === "SWING" ? "波段" : "短线"}</span></div><span class="badge ${level === "danger" ? "short" : level === "warning" ? "watch" : "long"}">${label}</span></div>
+      <div class="key-line">原入场 <b>${r.entryText}</b> · 止损 <b class="red">${r.stopText}</b> · TP1 <b class="green">${r.tp1Text}</b></div>
+      <div class="track-note">${r.trackMessage || "等待下一轮多周期复核"}${Number.isFinite(r.trackLastPrice) ? `\n最近监控价：${formatPrice(r.trackLastPrice)}` : ""}</div>
+      <div class="track-log">最近提示：\n${logs || "暂无提示记录"}</div>
+      <div class="track-actions"><button class="btn btn-secondary track-btn" onclick="toggleRecord('${r.id}')">查看原策略详情</button><button class="btn btn-secondary track-btn" onclick="toggleTracking('${r.id}')">取消追踪</button></div>
+    </div>`;
+  }).join("");
+}
+
 
 // ===== 实盘追踪判定（用 5M K 线高低价判定触碰，比轮询现价更能抓住插针） =====
 function recordIsTerminal(r) { return !!(r.timeSL || r.timeInv || r.timeTP3); }
@@ -1885,6 +2276,9 @@ const recentSwingRecords = recordPool.filter(x => x.symbolId === r.symbolId && x
 if (recentShortRecords.length) checkRecordTriggers(r.symbolId, r.price, r.lastBarHigh, r.lastBarLow, r.lastBarTs, 5 * 60 * 1000, "SHORT");
 if (recentSwingRecords.length) checkRecordTriggers(r.symbolId, r.price, r.lastBar1hHigh, r.lastBar1hLow, r.lastBar1hTs, 60 * 60 * 1000, "SWING");
 checkInvalidation(r.symbolId, r.lastClose15, r.lastClose1h, r.lastClose5);
+let trackChanged = false;
+for (const trackedRec of recordPool) { if (trackedRec.symbolId === r.symbolId && trackedRec.tracked) { if (evaluateTrackedStrategy(trackedRec, r)) trackChanged = true; } }
+if (trackChanged) saveRecords();
 }
 // v3.5 生成前查越线：失效周期最近一根已收盘 K 线若已越过失效位，逻辑在生成前已坏，不生成（短线）
 if ((r.side === "LONG" || r.side === "SHORT") && Number.isFinite(r.invVal)) {
@@ -1957,6 +2351,11 @@ playBeep();
 const now = new Date();
 document.getElementById("lastUpdate").textContent = now.toLocaleTimeString("zh-CN", { hour12: false});
 setStatus("live", "行情已就绪");
+
+lastMarketResults = results;
+renderTrackingPool();
+await updateEqnStrategies(results, false);
+for (const m of results) if (m.price > 0) checkEqnStrategyTriggers(m.symbolId, m.price);
 
 const failed = results.filter(x => x.price === 0);
 if (failed.length) {
@@ -3015,12 +3414,16 @@ initTheme();
 initDsSettings();
 updateAiStrictBtn();
 loadRecords();
+loadEqnStrategies();
 loadReversalWatches();
 renderRecordPool();
+renderTrackingPool();
+renderEqnPool();
 renderAiWorkspace();
 initAiMarketAuto();
 loadAll();
 startTimer();
+startEqnRefreshTimer();
 connectWs();
 
 </script>
