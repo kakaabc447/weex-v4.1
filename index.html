@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>浪浪风格 WEEX AI 策略雷达 v4.2.3</title>
+<title>浪浪风格 WEEX AI 策略雷达 v4.2.4</title>
 <style>
 /* ===== 主题变量 ===== */
 :root {
@@ -281,7 +281,7 @@ position: relative;
 </div>
 
 <div class="footer-note">
-行情来源：WEEX 合约公开接口（只读，不自动下单） · v4.2.3
+行情来源：WEEX 合约公开接口（只读，不自动下单） · v4.2.4
 </div>
 
 <div class="actions">
@@ -1202,6 +1202,22 @@ function detectBreakRetestConfirm(k15, k5, side, livePrice) {
   return { stage: 2, confirmed: fiveConfirm && notChasing, level, breakIndex, retestIndex, retestTs: retestCloseTs, notChasing };
 }
 
+// v4.2.4 位置过滤：入场位于近40根已收盘15M区间（不含最新一根）的下1/4不开空、上1/4不开多；
+// 最新一根15M收盘已突破区间（空头收在区间低点下方 / 多头收在区间高点上方）= 真突破，豁免
+function rangePositionBlock(k15, side, entryMid) {
+  if (!k15 || !Array.isArray(k15.closes) || k15.closes.length < 21 || !Number.isFinite(entryMid)) return null;
+  const closes = k15.closes, highs = k15.highs, lows = k15.lows;
+  const lastClose = closes[closes.length - 1];
+  const win = Math.min(40, closes.length - 1);
+  let hi = -Infinity, lo = Infinity;
+  for (let i = closes.length - 1 - win; i < closes.length - 1; i++) { if (highs[i] > hi) hi = highs[i]; if (lows[i] < lo) lo = lows[i]; }
+  if (!(hi > lo)) return null;
+  const pos = (entryMid - lo) / (hi - lo);
+  if (side === "SHORT" && pos <= 0.25 && lastClose >= lo) return `位置过滤：入场在近${win}根15M区间的下1/4（分位${Math.round(pos * 100)}%），贴箱底不开空`;
+  if (side === "LONG" && pos >= 0.75 && lastClose <= hi) return `位置过滤：入场在近${win}根15M区间的上1/4（分位${Math.round(pos * 100)}%），贴箱顶不开多`;
+  return null;
+}
+
 function analyze(info, k4h, k1h, k15, k5, ticker) {
 const analysisPrice = k5.closes[k5.closes.length - 1];
 const price = ticker.lastPrice;
@@ -1466,6 +1482,17 @@ grade = null; etaText = null; judgeText = null; branch = null;
 }
 }
 
+// v4.2.4 位置过滤（趋势/短打）：贴箱底不开空、贴箱顶不开多，真突破收盘豁免；反转支不经过本闸（它的活就是在极端位置接单），波段支在 analyzeSwing 内、同样不经过
+if ((side === "LONG" || side === "SHORT") && (branch === "TREND" || branch === "SCALP")) {
+const posBlock = rangePositionBlock(k15, side, entryMid);
+if (posBlock) {
+reasons = [posBlock, ...reasons];
+side = "WATCH";
+type = "位置过滤 · 等待更好位置";
+branch = null;
+}
+}
+
 // v3.6 探台硬闸：TP1 前的台子被探 ≥SHELF_KILL_TESTS 次且未被收盘跌破/站上 → 不出单（降级观望、不入池，卡上写明原因）；v3.7 起反转支豁免（瀑布后第一目标必压在旧台子下，审它等于关掉反转支）
 if ((side === "LONG" || side === "SHORT") && branch!== "REVERSAL" && shelfInfo && shelfInfo.tests >= SHELF_KILL_TESTS &&!shelfInfo.broken) {
 reasons = [`TP1前有台子（${side === "LONG"? "探顶": "探底"} ${shelfInfo.tests} 次未破），不出单`,...reasons];
@@ -1503,6 +1530,22 @@ if ((side === "LONG" || side === "SHORT") && confidence.score < 50) {
   confirmed = false;
   entry = stop = tp1 = tp2 = tp3 = null;
 }
+// v4.2.4 把关原始K线包：三档（近景15M×24 / 中景1H×14 / 远景4H×10），均为已收盘K线，带量
+const candlePackText = (() => {
+const fmtK = (k, count, label) => {
+if (!k || !Array.isArray(k.closes) || !k.closes.length) return "";
+const start = Math.max(0, k.closes.length - count);
+const rows = [];
+for (let i = start; i < k.closes.length; i++) {
+const dt = new Date(k.times[i]);
+const hh = String(dt.getHours()).padStart(2, "0"), mm = String(dt.getMinutes()).padStart(2, "0");
+rows.push(`${hh}:${mm} ${formatPrice(k.opens[i])}/${formatPrice(k.highs[i])}/${formatPrice(k.lows[i])}/${formatPrice(k.closes[i])} 量${Math.round(k.volumes[i] || 0)}`);
+}
+return `${label}（时间 开/高/低/收/量）：\n${rows.join("\n")}`;
+};
+return [fmtK(k15, 24, "近景·最近24根已收盘15M"), fmtK(k1h, 14, "中景·最近14根已收盘1H"), fmtK(k4h, 10, "远景·最近10根已收盘4H")].filter(Boolean).join("\n");
+})();
+
 const swing = analyzeSwing(info, k4h, k1h, k15, k5, price);
 return {
 name: info.name, symbolId: info.id, group: info.group, price, changePct, ticker, side, type, score,
@@ -1525,6 +1568,7 @@ atr15Val: structure15.atrValue,
 dayHigh: k1h.highs.length? Math.max(...k1h.highs.slice(-24)): null,
 dayLow: k1h.lows.length? Math.min(...k1h.lows.slice(-24)): null,
 marketKlines15m: k15.closes.slice(-20).map((close, i) => { const idx = k15.closes.length - Math.min(20, k15.closes.length) + i; return { time:k15.times[idx], open:k15.opens[idx], high:k15.highs[idx], low:k15.lows[idx], close, volume:k15.volumes[idx] }; }),
+candlePackText,
 last6Text: k15.closes.slice(-6).map((c6, i6) => { const idx6 = k15.closes.length - 6 + i6; const d6 = new Date(k15.times[idx6]); const hh6 = String(d6.getHours()).padStart(2, "0"), mm6 = String(d6.getMinutes()).padStart(2, "0"); return `${hh6}:${mm6} ${formatPrice(k15.opens[idx6])}/${formatPrice(k15.highs[idx6])}/${formatPrice(k15.lows[idx6])}/${formatPrice(c6)}`;}).join("\n"),
 last6Text5m: k5.closes.slice(-6).map((c6, i6) => { const idx6 = k5.closes.length - 6 + i6; const d6 = new Date(k5.times[idx6]); const hh6 = String(d6.getHours()).padStart(2, "0"), mm6 = String(d6.getMinutes()).padStart(2, "0"); return `${hh6}:${mm6} ${formatPrice(k5.opens[idx6])}/${formatPrice(k5.highs[idx6])}/${formatPrice(k5.lows[idx6])}/${formatPrice(c6)}`;}).join("\n")
 };
@@ -1875,7 +1919,7 @@ if (added) hasNewRecord = true;
 }
 // 波段线：独立入池（带 SWING 标记，与短线记录分开去重、分开算有效期），同样走 AI 把关
 if (r.swing) {
-const swingData = {...r.swing, name: r.name, symbolId: r.symbolId, price: r.price, dayHigh: r.dayHigh, dayLow: r.dayLow, trend4:r.trend4, trend1:r.trend1, trend15:r.trend15, structure1Bias:r.structure1Bias, volOk:r.volOk, rsiValue:r.rsiValue, div:r.div, last6Text:r.last6Text, last6Text5m:r.last6Text5m, atr15Val:r.atr15Val};
+const swingData = {...r.swing, name: r.name, symbolId: r.symbolId, price: r.price, dayHigh: r.dayHigh, dayLow: r.dayLow, trend4:r.trend4, trend1:r.trend1, trend15:r.trend15, structure1Bias:r.structure1Bias, volOk:r.volOk, rsiValue:r.rsiValue, div:r.div, candlePackText:r.candlePackText, last6Text:r.last6Text, last6Text5m:r.last6Text5m, atr15Val:r.atr15Val};
 const addedSwing = await gateAndRecord(swingData);
 if (addedSwing) hasNewRecord = true;
 }
@@ -2364,9 +2408,10 @@ function buildDsPrompt(d, rec) {
     "你是谨慎、严格的加密货币合约交易员，负责在策略进入正式策略池之前做独立复核。你不是来迎合程序的，发现明显缺陷必须否决。",
     "你只能使用本条消息提供的数据。不得编造价格、成交量、指标、结构位或胜率；数据不足必须降级为观望。",
     "审核顺序：1. 4H大趋势是否支持；2. 1H EMA方向与摆动结构是否协调；3. 15M突破/回踩/反转结构是否真实且新鲜；4. 5M确认是否为最新已收盘K线、是否已经过期或追价；5. TP1前是否有明显支撑阻力障碍；6. 扣除默认手续费与滑点后的净盈亏比、止损宽度和目标空间。",
+    "看原始K线时重点核对：价格在近期区间的位置（贴下沿别追空、贴上沿别追多）、同一价位被影线插穿后收盘是否收回（承接/派发）、实体与量能是否衰减；程序标签与原始K线矛盾时，以原始K线为准并在理由中指出。",
     "普通趋势/短打策略不得逆着明确的4H或1H方向；反转支可以逆势，但必须同时有极端位置、背离/成交量依据和反向结构确认。波段支重点看4H背景、1H结构和15M确认。",
     "信心评级含义：高=各周期高度协调、结构和入场确认完整、风险收益空间较好；中偏高=核心条件成立，仅有轻微瑕疵；中=存在明显不确定性，应观察等待；中偏低/低=结构、确认或交易价值不足。评级不是胜率。",
-    "准入规则：只有‘评级：高’或‘评级：中偏高’，并且‘结论：可做’，才建议进入正式策略池。评级为中、结论观望或任何关键数据不足，一律观望；中偏低、低或放弃，必须否决。",
+    "准入规则（与程序一致）：结论‘放弃’=否决、不入池；结论‘观望’或‘可做’=可入池，评级只表达质量、不单独决定准入。发现结构已失效、贴区间极端位置追单、或关键数据不足时，应给放弃或观望并写明。",
     "价格纪律：理由和风险中出现的任何具体价位，只能引用下方列出的入场、止损、失效位、TP或日内区间；没有提供的价位不准推算。",
     "只按下面四行格式输出，不要添加其他前言：",
     "评级：高/中偏高/中/中偏低/低",
@@ -2393,8 +2438,8 @@ function buildDsPrompt(d, rec) {
     `24小时参考区间：${Number.isFinite(d.dayLow) && Number.isFinite(d.dayHigh) ? formatPrice(d.dayLow) + " ~ " + formatPrice(d.dayHigh) : "--"}`,
     aboveLine,
     belowLine,
-    "最近6根已收盘15M K线（时间 开/高/低/收）：",
-    d.last6Text || "--",
+    "原始K线（均为已收盘；先看原始K线、再看程序标签，矛盾时以原始K线为准）：",
+    d.candlePackText || d.last6Text || "--",
     "最近6根已收盘5M K线（时间 开/高/低/收）：",
     d.last6Text5m || "--"
   ];
