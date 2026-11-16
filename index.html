@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>浪浪风格 WEEX AI 策略雷达 v4.2.2</title>
+<title>浪浪风格 WEEX AI 策略雷达 v4.2.3</title>
 <style>
 /* ===== 主题变量 ===== */
 :root {
@@ -275,15 +275,13 @@ position: relative;
 <div class="record-title">📋 策略记录池（信号跟踪）</div>
 <button class="btn btn-secondary" onclick="clearRecordPool()">清空记录</button>
 </div>
-<div class="branch-stats" id="branchStats"></div>
 <div id="recordPool">
 <div style="color:var(--muted);font-size:13px;padding:6px">暂无存入的有效多/空信号</div>
 </div>
 </div>
 
 <div class="footer-note">
-行情来源：WEEX 合约公开接口（只读，不自动下单）<br>
-结构位判定 · 信心等级 · 多周期过滤 · v4.2.2（四周期策略引擎优化 + 单一AI实时市场分析师 + 短打改真短打：5M触发/5M止损/30分钟动能时限/同台子每日一次 + 修复波段线 trend1 报错 + AI把关改回放弃才拦、盈亏比改回只挂牌不压制；不含回测与模拟账户）
+行情来源：WEEX 合约公开接口（只读，不自动下单） · v4.2.3
 </div>
 
 <div class="actions">
@@ -1898,7 +1896,7 @@ if (recR) r.aiText = recR.aiText;
 }
 document.getElementById("cards").innerHTML = results.map(renderCard).join("");
 
-const btns = document.querySelectorAll('.tab-btn');
+const btns = document.querySelectorAll('#tabContainer .tab-btn');
 btns.forEach((b, index) => {
 if (index === ["group1", "group2", "group3", "group4"].indexOf(currentTab)) b.classList.add('active');
 else b.classList.remove('active');
