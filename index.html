@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>浪浪风格 WEEX AI 策略雷达 v4.2.5</title>
+<title>浪浪风格 WEEX AI 策略雷达 v4.3</title>
 <style>
 /* ===== 主题变量 ===== */
 :root {
@@ -243,22 +243,7 @@ position: relative;
 .track-log { border-top:1px solid var(--border); margin-top:9px; padding-top:7px; font-size:11px; color:var(--muted); line-height:1.65; }
 .track-btn { padding:6px 9px; font-size:11px; border-radius:7px; }
 
-/* ===== EQN 独立策略池 ===== */
-.eqn-summary { font-size:12px; color:var(--muted); line-height:1.65; margin:6px 0 10px; }
-.eqn-feed-item { border:1px solid var(--border); border-radius:9px; padding:9px; margin:7px 0; background:var(--item-bg); }
-.eqn-feed-title { font-size:12px; line-height:1.55; font-weight:650; }
-.eqn-feed-meta { color:var(--muted); font-size:10px; margin-top:4px; }
-.eqn-strategy { border:1px solid var(--border); border-left:4px solid var(--blue); border-radius:11px; padding:12px; margin:9px 0; background:var(--card); box-shadow:var(--shadow); }
-.eqn-strategy.long { border-left-color:var(--green); }
-.eqn-strategy.short { border-left-color:var(--red); }
-.eqn-strategy.done { opacity:.72; }
-.eqn-levels { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:9px; }
-.eqn-level { background:var(--item-bg); border-radius:7px; padding:8px; font-size:11px; }
-.eqn-level b { display:block; font-size:13px; margin-top:2px; }
-.eqn-source { font-size:10px; color:var(--muted); line-height:1.55; margin-top:8px; }
-.eqn-actions { display:flex; gap:7px; flex-wrap:wrap; margin-top:9px; }
-.eqn-actions .btn { padding:6px 9px; font-size:11px; }
-@media (max-width:600px) { .pool-switch-btn { padding:10px 5px; font-size:12px; } .eqn-levels { gap:6px; } }
+@media (max-width:600px) { .pool-switch-btn { padding:10px 5px; font-size:12px; } }
 </style>
 </head>
 <body>
@@ -309,7 +294,6 @@ position: relative;
 <div class="pool-switch" role="tablist" aria-label="策略内容切换">
 <button type="button" class="pool-switch-btn active" id="strategyPoolTab" onclick="switchPoolView('strategy')">📋 策略池</button>
 <button type="button" class="pool-switch-btn" id="trackingPoolTab" onclick="switchPoolView('tracking')">🎯 追踪池 <span id="trackingCount" class="pool-count">0</span></button>
-<button type="button" class="pool-switch-btn" id="eqnPoolTab" onclick="switchPoolView('eqn')">🌐 EQN策略 <span id="eqnCount" class="pool-count">0</span></button>
 </div>
 <div id="strategyPoolView" class="pool-view active">
 <div class="record-section">
@@ -331,27 +315,10 @@ position: relative;
 <div id="trackingPool"><div style="color:var(--muted);font-size:13px;padding:6px">还没有追踪策略。请在策略池中点击“加入追踪”。</div></div>
 </div>
 </div>
-<div id="eqnPoolView" class="pool-view" hidden>
-<div class="track-panel">
-<div class="record-header">
-<div class="record-title">🌐 EQN 独立策略实验区</div>
-<div style="font-size:11px;color:var(--muted)" id="eqnStatus">等待读取 EQN 数据</div>
-</div>
-<div class="eqn-summary" id="eqnSummary">独立实验，不影响原策略池。EQN 提供异动/OI/新闻线索，入场、止损和止盈价使用 WEEX 行情计算。数据未读到时不会伪造策略。</div>
-<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px">
-<button class="btn btn-secondary" id="eqnRefreshBtn" onclick="refreshEqnNow()">刷新 EQN 数据</button>
-<button class="btn btn-secondary" onclick="clearEqnPool()">清空 EQN 策略</button>
-</div>
-<div class="record-title" style="font-size:13px;margin:12px 0 6px">EQN 生成的独立策略</div>
-<div id="eqnStrategyPool"><div style="color:var(--muted);font-size:13px;padding:6px">正在等待 EQN 异动数据……</div></div>
-<div class="record-title" style="font-size:13px;margin:16px 0 6px">最近 EQN 异动 / 新闻</div>
-<div id="eqnFeedList"><div style="color:var(--muted);font-size:13px;padding:6px">尚未读取</div></div>
-</div>
-</div>
 </div>
 
 <div class="footer-note">
-行情来源：WEEX 合约公开接口（只读，不自动下单） · v4.2.5
+行情来源：WEEX 合约公开接口（只读，不自动下单） · v4.3
 </div>
 
 <div class="actions">
@@ -397,7 +364,6 @@ const SYMBOLS = [
 {id:"XAUTUSDT", name:"XAUT", group:"group3"}, {id:"SNDKUSDT", name:"SNDK", group:"group3"},
 {id:"SKHYNIXUSDT", name:"SKHYNIX", group:"group4"}
 ];
-const REVERSAL_WHITELIST = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ZECUSDT"];
 
 const LIMIT = 300;
 const EMA_FAST = 50, EMA_SLOW = 200;
@@ -413,15 +379,13 @@ const SHELF_WARN_TESTS = 2, SHELF_KILL_TESTS = 3;
 // 分支常量（v3.7）：四分支各自的触发/闸口参数，常数可调
 const SCALP_BREAK_ATR = 0.2, SCALP_BUFFER_ATR = 0.3, SCALP_MIN_TESTS = 2, SCALP_FEE_MULT = 3; // 短打（v4.2 真短打）：5M 收盘破台 ≥0.2×ATR(5M)、止损缓冲 0.3×ATR(5M)、台子至少被探 2 次、TP1 距离 ≥3 倍往返手续费
 const SCALP_VOL_MULT = 1.5, SCALP_MIN_STOP_PCT = 0.0025, SCALP_TTL_MS = 30 * 60 * 1000; // 短打：破位 5M 量 ≥1.5 倍均量、止损距离 <0.25% 不出、出生 30 分钟未走出路程打「动能不足」
-const REV_RR_MIN = 1.2, REV_WATCH_TTL_MS = 2 * 3600 * 1000; // 反转：盈亏比硬门槛 1.2；预警观察有效期 2 小时
 const AI_GATE_TIMEOUT_MS = 15000, AI_DOWN_COOLDOWN_MS = 30 * 60 * 1000; // AI 把关：单次超时 15 秒；接口不可用后冷却 30 分钟再试
-const BRANCH_LABEL = { TREND: "趋势支", SCALP: "短打支", REVERSAL: "反转支", SWING: "波段支"};
-const BRANCH_SHORT = { TREND: "趋势", SCALP: "短打", REVERSAL: "反转", SWING: "波段"}; // v3.8 标题行用的短名
+const BRANCH_LABEL = { BREAKOUT: "突破", PULLBACK: "回踩", TREND: "趋势支", SCALP: "短打支", REVERSAL: "反转支", SWING: "波段支"};
+const BRANCH_SHORT = { BREAKOUT: "突破", PULLBACK: "回踩", TREND: "趋势", SCALP: "短打", REVERSAL: "反转", SWING: "波段"}; // 标题行短名；旧名仅用于历史记录显示
 function shortTime(item) { // v3.8 标题行右上角时间：MM/DD HH:MM（无 ts 的旧记录退回完整时间字符串）
 if (item && item.ts) { const d = new Date(item.ts); const p = (n) => String(n).padStart(2, "0"); return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;}
 return (item && item.timeStr) || "";
 }
-const BRANCH_PRIORITY = { SWING: 4, TREND: 3, SCALP: 2, REVERSAL: 1}; // 相冲让行顺序：波段 > 趋势 > 短打 > 反转
 // 级别判定常量（按 TP1 距离占入场价比例）
 const GRADE_ULTRA = 0.006, GRADE_SHORT = 0.02;
 const FEE_RT = 0.0016; // 往返手续费约 0.16%
@@ -458,22 +422,10 @@ let busy = false;
 let soundEnable = true;
 let lastSignalKey = new Set();
 let recordPool = [];
-// EQN 实验区完全独立：不写入原 recordPool，也不改变原追踪池
-let eqnStrategyPool = [];
-let eqnFeedItems = [];
-let eqnLastFetchAt = 0;
-let eqnFetchBusy = false;
-let eqnRefreshBusy = false;
-let eqnRefreshTimer = null;
-let eqnLastError = "";
-const EQN_CHANNELS = ["oi", "pricechange", "major", "main"];
-const EQN_FEED_URL = "https://proxy.cors.dev/https://api.eqn.news/public/rss?ch=";
-const EQN_TTL_MS = 90 * 60 * 1000;
 let lastMarketResults = [];
 let lastResults = [];
 let contractInfoLoaded = false;
 let availableSymbols = null;
-const revWatch = Object.create(null); // 反转支二次确认观察表：key=symbolId_side → {stab, barTs, ts}
 let aiBlockedLog = []; // AI 把关拦下账（隐藏审计，只计数+最近原因，不进主池）
 try { aiBlockedLog = JSON.parse(localStorage.getItem('weex_ai_blocked') || "[]"); if (!Array.isArray(aiBlockedLog)) aiBlockedLog = [];} catch (e) { aiBlockedLog = [];}
 let aiDownUntil = 0; // AI 接口不可用冷却截止时间（毫秒）
@@ -597,7 +549,7 @@ function toggleAuto() {
 autoRefresh =!autoRefresh;
 document.getElementById("autoText").textContent = autoRefresh? "开": "关";
 if (autoRefresh) {
-  if (!document.hidden) { startTimer(); startEqnRefreshTimer(); connectWs(); loadAll(); }
+  if (!document.hidden) { startTimer(); connectWs(); loadAll(); }
 }
 else { if (timer) { clearInterval(timer); timer = null;} disconnectWs();}
 }
@@ -635,7 +587,7 @@ if (r.timeInv) return { cls: "bad", text: "跟进：情况不对 · 逻辑已失
 if (r.timeTP3) return { cls: "good", text: "跟进：TP3 已到 · 可全部落袋离场"};
 if (r.timeTP2) return { cls: "good", text: `跟进：TP2 已到 · 可继续减仓，余仓止损至少移到${be}`};
 if (r.timeTP1) return { cls: "good", text: `跟进：TP1 已到 · 可减仓落袋，余仓止损可移到${be}`};
-if (r.branch === "SCALP" && r.ts && Date.now() - r.ts > SCALP_TTL_MS && !r.timeTP1 && (r.maxFav || 0) < BE_TRIGGER) {
+if ((r.branch === "BREAKOUT" || r.branch === "SCALP") && r.ts && Date.now() - r.ts > SCALP_TTL_MS && !r.timeTP1 && (r.maxFav || 0) < BE_TRIGGER) {
 return { cls: "mid", text: "跟进：动能不足 · 出生超 30 分钟未到推保本线，短打已过期，建议离场"};
 }
 const mf = r.maxFav || 0;
@@ -662,7 +614,7 @@ return false;
 
 // ===== 分支战绩（v3.7）：按分支统计记录池内的出单数与先到顺序（TP1 先到 / 止损先到，按盖章时间字符串比较） =====
 function branchStatsText() {
-const order = ["TREND", "SCALP", "REVERSAL", "SWING"];
+const order = ["BREAKOUT", "PULLBACK", "TREND", "SCALP", "REVERSAL", "SWING"];
 const tally = {};
 for (const b of order) tally[b] = { n: 0, tp: 0, sl: 0, invalid: 0, open: 0 };
 let legacy = 0;
@@ -776,22 +728,11 @@ ${item.invalidText? `<div class="reason" style="margin-top:4px; font-size:11px;"
 wrap.innerHTML = html;
 }
 
-function loadEqnStrategies() {
-  try {
-    const saved = JSON.parse(localStorage.getItem('weex_eqn_strategy_pool') || "[]");
-    eqnStrategyPool = Array.isArray(saved) ? saved : [];
-  } catch (e) { eqnStrategyPool = []; }
-}
-function saveEqnStrategies() {
-  try { localStorage.setItem('weex_eqn_strategy_pool', JSON.stringify(eqnStrategyPool)); } catch (e) {}
-}
-
 // ===== 策略池 / 追踪池同位置切换 =====
 function switchPoolView(view) {
   const views = {
     strategy: ["strategyPoolView", "strategyPoolTab"],
-    tracking: ["trackingPoolView", "trackingPoolTab"],
-    eqn: ["eqnPoolView", "eqnPoolTab"]
+    tracking: ["trackingPoolView", "trackingPoolTab"]
   };
   for (const [key, ids] of Object.entries(views)) {
     const viewEl = document.getElementById(ids[0]);
@@ -805,213 +746,6 @@ function updateTrackingCount() {
   if (el) el.textContent = String(recordPool.filter(r => r.tracked).length);
 }
 
-
-// ===== EQN 独立实验区：RSS 读取异动/OI/新闻，WEEX 行情负责定价 =====
-function eqnParseRss(xmlText, channel) {
-  const doc = new DOMParser().parseFromString(xmlText, "text/xml");
-  if (doc.querySelector("parsererror")) throw new Error("EQN RSS 格式无法解析");
-  return [...doc.querySelectorAll("item")].map(node => {
-    const title = node.querySelector("title")?.textContent?.trim() || "";
-    const description = node.querySelector("description")?.textContent?.trim() || title;
-    const link = node.querySelector("link")?.textContent?.trim() || "https://eqn.news";
-    const pubDate = node.querySelector("pubDate")?.textContent?.trim() || "";
-    const ts = pubDate ? Date.parse(pubDate) : Date.now();
-    return { title, description, link, channel, ts: Number.isFinite(ts) ? ts : Date.now() };
-  }).filter(x => x.title || x.description);
-}
-async function fetchEqnFeeds(force = false) {
-  if (eqnFetchBusy) return eqnFeedItems;
-  if (!force && eqnLastFetchAt && Date.now() - eqnLastFetchAt < 60000) return eqnFeedItems;
-  eqnFetchBusy = true;
-  try {
-    const all = [];
-    const responses = await Promise.all(EQN_CHANNELS.map(async channel => {
-      const url = EQN_FEED_URL + encodeURIComponent(channel) + "&lang=zh";
-      const res = await fetch(url, { cache:"no-store", headers:{"Accept":"application/rss+xml, application/xml, text/xml"}, signal:AbortSignal.timeout(12000) });
-      if (!res.ok) throw new Error(channel + "频道 HTTP " + res.status);
-      return eqnParseRss(await res.text(), channel);
-    }));
-    for (const rows of responses) all.push(...rows);
-    const seen = new Set();
-    eqnFeedItems = all.sort((a,b) => b.ts-a.ts).filter(x => {
-      const key = x.link || x.title;
-      if (seen.has(key)) return false;
-      seen.add(key); return true;
-    }).slice(0, 80);
-    eqnLastFetchAt = Date.now();
-    eqnLastError = "";
-    return eqnFeedItems;
-  } catch (e) {
-    eqnLastError = e?.message || "EQN 数据读取失败";
-    throw e;
-  } finally { eqnFetchBusy = false; }
-}
-function eqnCoinFromText(text) {
-  const t = String(text || "").toUpperCase();
-  for (const sym of ["BTC", "ETH", "SOL", "ZEC"]) {
-    const re = new RegExp("(^|[^A-Z0-9])" + sym + "(?:USDT)?([^A-Z0-9]|$)");
-    if (re.test(t)) return sym + "USDT";
-  }
-  return null;
-}
-function eqnParsePercent(text, regex) {
-  const m = String(text || "").match(regex);
-  if (!m) return null;
-  const n = Number(String(m[1]).replace(/−/g, "-"));
-  return Number.isFinite(n) ? n : null;
-}
-function eqnEventSignal(item) {
-  const text = (item.title || "") + " " + (item.description || "");
-  const symbolId = eqnCoinFromText(text);
-  if (!symbolId) return null;
-  const oiPct = eqnParsePercent(text, /(?:未平仓(?:合约)?量|OI)\s*([+＋-]?\s*\d+(?:\.\d+)?)\s*%/i);
-  let pricePct = eqnParsePercent(text, /(?:过去\s*\d+\s*秒\s*)?价格(?:上涨|上升|下跌|下降)\s*([+＋−-]?\s*\d+(?:\.\d+)?)\s*%/i);
-  if (pricePct === null) pricePct = eqnParsePercent(text, /(?:10秒|30秒|60秒|1小时|24小时|24H)[^\r\n%]{0,35}([+＋−-]?\s*\d+(?:\.\d+)?)\s*%/i);
-  if (pricePct === null) pricePct = eqnParsePercent(text, /([+＋−-]\s*\d+(?:\.\d+)?)\s*%/);
-  if (pricePct === null) return null;
-  const age = Date.now() - item.ts;
-  if (age < -5 * 60 * 1000 || age > EQN_TTL_MS) return null;
-  const channel = item.channel;
-  let side = null, reason = "";
-  if (oiPct !== null && Math.abs(oiPct) >= 2 && Math.abs(pricePct) >= 0.5) {
-    if (oiPct > 0 && pricePct > 0) { side = "LONG"; reason = `EQN监测到 OI 增加 ${oiPct.toFixed(1)}%，价格同步上涨 ${pricePct.toFixed(1)}%`; }
-    else if (oiPct > 0 && pricePct < 0) { side = "SHORT"; reason = `EQN监测到 OI 增加 ${oiPct.toFixed(1)}%，价格同步下跌 ${Math.abs(pricePct).toFixed(1)}%`; }
-  } else if ((channel === "pricechange" || channel === "major") && Math.abs(pricePct) >= 0.8 && Math.abs(pricePct) <= 4) {
-    side = pricePct > 0 ? "LONG" : "SHORT";
-    reason = `EQN价格异动 ${pricePct > 0 ? "+" : ""}${pricePct.toFixed(1)}%`;
-  }
-  if (!side) return null;
-  return { symbolId, side, oiPct, pricePct, reason, item };
-}
-function eqnBuildStrategy(signal, market) {
-  if (!market || !market.price || !Number.isFinite(market.atr15Val) || market.atr15Val <= 0) return null;
-  const isLong = signal.side === "LONG";
-  const aligned = isLong ? market.trend4 === "BULL" : market.trend4 === "BEAR";
-  const trend1Aligned = isLong ? market.trend1 === "BULL" : market.trend1 === "BEAR";
-  // 4H 明确反向时不生成正式方向策略，避免把单一异动当作逆势入场依据
-  if ((market.trend4 === "BEAR" && isLong) || (market.trend4 === "BULL" && !isLong)) return null;
-  const entryMid = market.price;
-  const atr15 = market.atr15Val;
-  const entry = [entryMid - atr15 * 0.12, entryMid + atr15 * 0.12];
-  const risk = atr15 * 1.15;
-  const stop = isLong ? entryMid - risk : entryMid + risk;
-  const tp1 = isLong ? entryMid + risk * 1.5 : entryMid - risk * 1.5;
-  const tp2 = isLong ? entryMid + risk * 2.2 : entryMid - risk * 2.2;
-  const tp3 = isLong ? entryMid + risk * 3 : entryMid - risk * 3;
-  const key = signal.symbolId + "_" + signal.side + "_" + signal.item.link;
-  if (eqnStrategyPool.some(x => x.key === key)) return null;
-  return {
-    id: "eqn_" + Date.now() + "_" + Math.random().toString(36).slice(2,7), key,
-    ts: Date.now(), eventTs: signal.item.ts, symbolId: signal.symbolId,
-    name: signal.symbolId.replace("USDT", ""), side: signal.side,
-    entryMid, entryLow: entry[0], entryHigh: entry[1], stop, tp1, tp2, tp3,
-    rr: 1.5, status: "active", hitTP1:false, hitTP2:false, hitTP3:false,
-    reason: signal.reason + (signal.oiPct !== null ? `；OI ${signal.oiPct > 0 ? "+" : ""}${signal.oiPct.toFixed(1)}%` : ""),
-    trend4: market.trend4, trend1: market.trend1, aligned4h: aligned, aligned1h: trend1Aligned,
-    sourceTitle: signal.item.title, sourceUrl: signal.item.link, sourceChannel: signal.item.channel,
-    pricePct: signal.pricePct, oiPct: signal.oiPct
-  };
-}
-function eqnEscape(value) { return String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch])); }
-function eqnSafeUrl(value) { try { const u = new URL(String(value || "")); return u.protocol === "https:" && (u.hostname === "eqn.news" || u.hostname.endsWith(".eqn.news")) ? u.href : "https://eqn.news"; } catch(e) { return "https://eqn.news"; } }
-function eqnFmtTime(ts) { return ts ? new Date(ts).toLocaleString("zh-CN", {hour12:false}) : "--"; }
-function renderEqnPool() {
-  const count = document.getElementById("eqnCount");
-  if (count) count.textContent = String(eqnStrategyPool.length);
-  const status = document.getElementById("eqnStatus");
-  if (status) status.textContent = eqnRefreshBusy ? "正在刷新…" : (eqnLastError ? "读取失败" : (eqnLastFetchAt ? "EQN已更新 " + new Date(eqnLastFetchAt).toLocaleTimeString("zh-CN", {hour12:false}) : "等待读取"));
-  const summary = document.getElementById("eqnSummary");
-  if (summary) summary.textContent = eqnLastError
-    ? "EQN 数据读取失败：" + eqnLastError + "。可能是当前浏览器跨域限制或网络问题；原策略池与追踪池不受影响。"
-    : `EQN 免费公开 RSS：OI、价格异动、大幅波动、主新闻；最近读取 ${eqnFeedItems.length} 条。只将方向明确且未超过 90 分钟的异动作为候选，4H 趋势反向时不生成正式策略。入场/止损/止盈来自 WEEX 当前行情与 15M ATR。`;
-  const wrap = document.getElementById("eqnStrategyPool");
-  if (wrap) {
-    if (!eqnStrategyPool.length) wrap.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:6px">目前没有达到条件的 EQN 策略。异动线索会保留在下方，不会为了凑数量硬生成。</div>';
-    else wrap.innerHTML = eqnStrategyPool.slice().sort((a,b)=>b.ts-a.ts).map(r => {
-      const sideLabel = r.side === "LONG" ? "做多" : "做空";
-      const statusLabel = r.status === "sl" ? "止损触发" : r.status === "tp3" ? "TP3完成" : r.status === "tp2" ? "TP2触发" : r.status === "tp1" ? "TP1触发" : "监控中";
-      return `<div class="eqn-strategy ${r.side === "LONG" ? "long" : "short"} ${r.status !== "active" ? "done" : ""}
-      <div class="record-top"><div class="rec-title">${r.name} ${r.side === "LONG" ? "🟢" : "🔴"}${sideLabel} <span class="rec-rr">EQN独立信号</span></div><span class="badge ${r.side === "LONG" ? "long" : "short"}">${statusLabel}</span></div>
-      <div class="key-line">生成：<b>${eqnFmtTime(r.ts)}</b> · 4H：<b>${r.trend4 === "BULL" ? "偏多" : r.trend4 === "BEAR" ? "偏空" : "中性"}</b> · 1H：<b>${r.trend1 === "BULL" ? "偏多" : r.trend1 === "BEAR" ? "偏空" : "中性"}</b></div>
-      <div class="eqn-levels"><div class="eqn-level">入场参考区<b>${formatPrice(r.entryLow)} ~ ${formatPrice(r.entryHigh)}</b></div><div class="eqn-level">止损 SL<b class="red">${formatPrice(r.stop)}</b></div><div class="eqn-level">止盈 TP1<b class="green">${formatPrice(r.tp1)}</b></div><div class="eqn-level">止盈 TP2 / TP3<b class="green">${formatPrice(r.tp2)} / ${formatPrice(r.tp3)}</b></div></div>
-      <div class="key-line">盈亏比（TP1）：<b>1 : ${r.rr.toFixed(2)}</b> · ${eqnEscape(r.reason)}</div>
-      <div class="eqn-source">来源：${r.sourceChannel} · ${eqnFmtTime(r.eventTs)}<br>${eqnEscape(r.sourceTitle)}<br><a href="${eqnSafeUrl(r.sourceUrl)}" target="_blank" rel="noopener">查看 EQN 原始消息</a></div>
-      <div class="eqn-actions"><button class="btn btn-secondary" onclick="deleteEqnStrategy('${r.id}')">删除这条策略</button></div>
-      </div>`;
-    }).join("");
-  }
-  const feed = document.getElementById("eqnFeedList");
-  if (feed) feed.innerHTML = eqnFeedItems.length ? eqnFeedItems.slice(0,18).map(x => `<div class="eqn-feed-item"><div class="eqn-feed-title">${eqnEscape(x.title || x.description)}</div><div class="eqn-feed-meta">${eqnEscape(x.channel)} · ${eqnFmtTime(x.ts)} · <a href="${eqnSafeUrl(x.link)}" target="_blank" rel="noopener">查看原文</a></div></div>`).join("") : '<div style="color:var(--muted);font-size:13px;padding:6px">暂无 EQN 消息</div>';
-}
-function checkEqnStrategyTriggers(symbolId, price) {
-  let changed = false;
-  for (const r of eqnStrategyPool) {
-    if (r.symbolId !== symbolId || r.status === "sl" || r.status === "tp3") continue;
-    const long = r.side === "LONG";
-    if ((long && price <= r.stop) || (!long && price >= r.stop)) { r.status = "sl"; changed = true; continue; }
-    if (!r.hitTP1 && (long ? price >= r.tp1 : price <= r.tp1)) { r.hitTP1 = true; r.status = "tp1"; changed = true; }
-    if (!r.hitTP2 && (long ? price >= r.tp2 : price <= r.tp2)) { r.hitTP2 = true; r.status = "tp2"; changed = true; }
-    if (!r.hitTP3 && (long ? price >= r.tp3 : price <= r.tp3)) { r.hitTP3 = true; r.status = "tp3"; changed = true; }
-  }
-  if (changed) { saveEqnStrategies(); renderEqnPool(); }
-}
-async function updateEqnStrategies(markets, force = false) {
-  // 页面在后台时不请求 EQN；回到前台后由 visibilitychange 立即补刷
-  if (document.hidden) { renderEqnPool(); return; }
-  try {
-    await fetchEqnFeeds(force);
-    for (const item of eqnFeedItems) {
-      const signal = eqnEventSignal(item);
-      if (!signal) continue;
-      const market = markets.find(x => x.symbolId === signal.symbolId && x.price > 0);
-      const rec = eqnBuildStrategy(signal, market);
-      if (rec) eqnStrategyPool.unshift(rec);
-    }
-    // 防止重复/过量历史；策略数据独立持久化
-    eqnStrategyPool = eqnStrategyPool.slice(0, 100);
-    saveEqnStrategies();
-    renderEqnPool();
-  } catch (e) {
-    eqnLastError = e?.message || "EQN读取失败";
-    renderEqnPool();
-  }
-}
-async function refreshEqnNow() {
-  if (eqnRefreshBusy) return;
-  eqnRefreshBusy = true;
-  const btn = document.getElementById("eqnRefreshBtn");
-  if (btn) { btn.disabled = true; btn.textContent = "刷新中…"; }
-  renderEqnPool();
-  try {
-    eqnLastFetchAt = 0;
-    if (typeof lastMarketResults !== "undefined" && Array.isArray(lastMarketResults) && lastMarketResults.length) {
-      await updateEqnStrategies(lastMarketResults, true);
-    } else {
-      await fetchEqnFeeds(true);
-      renderEqnPool();
-    }
-  } catch (e) {
-    eqnLastError = e?.message || "EQN读取失败";
-    renderEqnPool();
-  } finally {
-    eqnRefreshBusy = false;
-    if (btn) { btn.disabled = false; btn.textContent = "刷新 EQN 数据"; }
-    renderEqnPool();
-  }
-}
-function startEqnRefreshTimer() {
-  if (eqnRefreshTimer) clearInterval(eqnRefreshTimer);
-  eqnRefreshTimer = setInterval(() => {
-    if (!document.hidden && !eqnRefreshBusy && !eqnFetchBusy && Array.isArray(lastMarketResults) && lastMarketResults.length) {
-      refreshEqnNow();
-    }
-  }, 60000);
-}
-function stopEqnRefreshTimer() {
-  if (eqnRefreshTimer) { clearInterval(eqnRefreshTimer); eqnRefreshTimer = null; }
-}
-function deleteEqnStrategy(id) { eqnStrategyPool = eqnStrategyPool.filter(x => x.id !== id); saveEqnStrategies(); renderEqnPool(); }
-function clearEqnPool() { if (!confirm("确定清空 EQN 独立策略池吗？不会影响原策略池和追踪池。")) return; eqnStrategyPool = []; saveEqnStrategies(); renderEqnPool(); }
 
 // ===== 用户主动追踪池：独立于自动策略记录池 =====
 function toggleTracking(id) {
@@ -1471,11 +1205,11 @@ function calculateStrategyConfidence({ side, branch, trend4, trend1, structure1,
 
   let p15 = 8;
   if (isReversal) p15 = 22;
-  else if (branch === "SCALP") p15 = 23;
+  else if (branch === "BREAKOUT") p15 = 23;
   else if (stage15 >= 2) p15 = 25;
   else if (stage15 === 1) p15 = 14;
 
-  let p5 = fiveConfirmed ? 20 : (branch === "SWING" ? 10 : 0);
+  let p5 = fiveConfirmed ? 20 : 0;
   let pRisk = rr >= 2 ? 10 : rr >= 1.6 ? 8 : rr >= 1.2 ? 6 : 0;
   if (Number.isFinite(riskPct) && riskPct > WIDE_STOP_PCT) pRisk = Math.min(pRisk, 2);
   const pMomentum = volumeConfirmed && directionalCandle ? 5 : divergenceConfirmed ? 4 : directionalCandle ? 2 : 0;
@@ -1680,33 +1414,13 @@ longScore = Math.max(0, longScore);
 shortScore = Math.max(0, shortScore);
 
 let side = "NONE", type = "观望", score = 0, reasons = [];
-let branch = null, revSignal = null, scalpShelf = null;
-let confirmed = false, isReversal = false;
-
-const canDoReversal = REVERSAL_WHITELIST.includes(info.id);
-
-const extremeLongReversal = canDoReversal && (rsiValue!== null && rsiValue < 28) && bullishCandle && (div.bull || volOk);
-const extremeShortReversal = canDoReversal && (rsiValue!== null && rsiValue > 72) && bearishCandle && (div.bear || volOk);
+let branch = null, scalpShelf = null;
+let confirmed = false, counterTrend = false;
 
 const longReady = longScore >= MIN_SCORE && longScore > shortScore && longConfirm;
 const shortReady = shortScore >= MIN_SCORE && shortScore > longScore && shortConfirm;
 
-// 反转预警登记后，必须等新的15M强势收盘 + 5M方向确认，不再仅凭“收盘没破位”出单。
-const revConfirm = checkReversalConfirm(info.id, k15, k5);
-let revExtreme = null;
-if (extremeLongReversal && trend4!== "BULL") revExtreme = "LONG";
-else if (extremeShortReversal && trend4!== "BEAR") revExtreme = "SHORT";
-
-if (revConfirm) {
-side = revConfirm.side; score = 2.5; branch = "REVERSAL"; isReversal = true; revSignal = revConfirm; confirmed = true;
-type = revConfirm.side === "LONG"? "⚠️ 逆势抄底 · 二次确认": "⚠️ 逆势摸顶 · 二次确认";
-reasons = [revConfirm.side === "LONG"? "极端超卖后企稳": "极端超买后企稳", "二次确认：已收盘 15M 守住企稳位", "逆势单，TP1 为主，快进快出"];
-} else if (revExtreme) {
-registerReversalWatch(info.id, revExtreme, k15);
-side = "WATCH"; score = 2.5; isReversal = true;
-type = revExtreme === "LONG"? "逆势预警 · 等二次确认（多）": "逆势预警 · 等二次确认（空）";
-reasons = [revExtreme === "LONG"? "5M极度超卖": "5M极度超买", "出现企稳迹象，仅预警不出单", "等已收盘 15M 守住企稳位再确认"];
-} else if (longReady) {
+if (longReady) {
 side = "LONG"; score = longScore; reasons = longReasons; confirmed = longConfirm;
 if (longConfirm) type = longBreak? "确认做多 · 突破": "确认做多 · 回踩";
 else if (longPullback) type = "回踩埋伏 · 做多";
@@ -1726,18 +1440,30 @@ type = shortPullback ? "反抽完成 · 等待5M确认" : shortBreak ? "15M跌�
 reasons = shortReasons;
 }
 
-// 普通趋势/短打信号不与4H、1H明确方向对着做；逆势机会只允许从反转支独立通过。
-if ((side === "LONG" || side === "SHORT") && !isReversal) {
+// v4.3 方向过滤：1H（EMA 或摆动结构）明确反向一律不做；仅逆 4H 时，回踩形态可放行并打逆势标（1H 至少一侧支持且已确认），突破形态不放行。
+if (side === "LONG" || side === "SHORT") {
   const wantedTrend = side === "LONG" ? "BULL" : "BEAR";
   const opposed4h = trend4 !== "NEUTRAL" && trend4 !== wantedTrend;
   const opposed1hEma = trend1 !== "NEUTRAL" && trend1 !== wantedTrend;
   const opposed1hStructure = structure1Bias !== "NEUTRAL" && structure1Bias !== wantedTrend;
-  if (opposed4h || opposed1hEma || opposed1hStructure) {
+  const pullbackSetup = side === "LONG" ? longPullback : shortPullback;
+  if (opposed1hEma || opposed1hStructure) {
     side = "WATCH";
-    type = opposed4h ? "4H大趋势相反 · 不做普通逆势单" : "1H方向/摆动结构冲突 · 等待顺势恢复";
-    reasons = [...reasons, opposed4h ? "普通策略被4H方向过滤" : "普通策略被1H方向或摆动结构过滤"];
+    type = "1H方向/摆动结构冲突 · 等待顺势恢复";
+    reasons = [...reasons, "普通策略被1H方向或摆动结构过滤"];
     branch = null;
     confirmed = false;
+  } else if (opposed4h) {
+    if (pullbackSetup && confirmed) {
+      counterTrend = true;
+      reasons = [...reasons, "逆 4H 回踩：按逆势单处理，TP1 为主、快进快出"];
+    } else {
+      side = "WATCH";
+      type = "4H大趋势相反 · 不做普通逆势单";
+      reasons = [...reasons, "普通策略被4H方向过滤"];
+      branch = null;
+      confirmed = false;
+    }
   }
 }
 
@@ -1758,15 +1484,14 @@ const entryMid = (entry[0] + entry[1]) / 2;
 // v3.6 失效位改取最近结构：候选阶梯 = 近 2 根 / 近 4 根已收盘 15M 极值、全部摆动点、前高前低、老口径极值（兜底），
 // 取离开场至少 0.25×ATR 的最近一个——不再让几小时前的区间顶（如凌晨高点）当失效位把止损拖宽
 let inv;
-// v3.7 分支判定（趋势/短打）：短打优先——同向同轮两支都触发时记短打（止损更薄、定义更具体）
+// v4.3 形态判定：突破优先——同向同轮两形态都触发时记突破（止损更薄、定义更具体）
 if (!branch) {
 scalpShelf = isLong ? longScalpShelf : shortScalpShelf;
 if (scalpShelf !== null && (isLong ? price <= scalpShelf : price >= scalpShelf)) scalpShelf = null;
-if (scalpShelf !== null) branch = "SCALP"; // v4.2：5M 破位K线本身即确认（放量+收极值已在 detectScalpShelf 内审），不再叠加趋势支的 confirmed
-else if (((isLong && trend4 !== "BEAR" && structure1Bias !== "BEAR" && (trend1 === "BULL" || structure1Bias === "BULL")) || (!isLong && trend4 !== "BULL" && structure1Bias !== "BULL" && (trend1 === "BEAR" || structure1Bias === "BEAR"))) && (isLong ? longPullback : shortPullback) && confirmed) branch = "TREND";
+if (scalpShelf !== null) branch = "BREAKOUT"; // 5M 破位K线本身即确认（放量+收极值已在 detectScalpShelf 内审），不再叠加回踩形态的 confirmed
+else if (((isLong && (counterTrend || trend4 !== "BEAR") && structure1Bias !== "BEAR" && (trend1 === "BULL" || structure1Bias === "BULL")) || (!isLong && (counterTrend || trend4 !== "BULL") && structure1Bias !== "BULL" && (trend1 === "BEAR" || structure1Bias === "BEAR"))) && (isLong ? longPullback : shortPullback) && confirmed) branch = "PULLBACK";
 }
-if (branch === "SCALP") inv = scalpShelf;
-else if (branch === "REVERSAL" && revSignal) inv = revSignal.stab;
+if (branch === "BREAKOUT") inv = scalpShelf;
 else {
 const clear = 0.25 * atr15;
 const pivsAll = isLong? findPivotLows(k15.lows): findPivotHighs(k15.highs);
@@ -1792,7 +1517,7 @@ if (!Number.isFinite(inv) || (isLong? inv >= entryMid: inv <= entryMid)) {
 side = "WATCH"; type = "结构位缺失 · 观望";
 entry = null;
 } else {
-stop = isLong? inv - (branch === "SCALP"? SCALP_BUFFER_ATR * atr5: 0.5 * atr15): inv + (branch === "SCALP"? SCALP_BUFFER_ATR * atr5: 0.5 * atr15); // v4.2：短打止损缓冲改按 ATR(5M)，与 5M 噪音匹配
+stop = isLong? inv - (branch === "BREAKOUT"? SCALP_BUFFER_ATR * atr5: 0.5 * atr15): inv + (branch === "BREAKOUT"? SCALP_BUFFER_ATR * atr5: 0.5 * atr15); // 突破形态止损缓冲按 ATR(5M)，与 5M 噪音匹配
 const tps = buildTpLevels(k15, structure15, side, entryMid);
 tp1 = tps.length > 0? tps[0]: null;
 tp2 = tps.length > 1? tps[1]: null;
@@ -1812,14 +1537,15 @@ shelfInfo = shelfCheck({ lows: k15.lows, highs: k15.highs, closes: k15.closes },
 if (shelfInfo.tests === SHELF_WARN_TESTS) warnList.push("TP1前有台子·探过2次");
 if (riskPct > WIDE_STOP_PCT) warnList.push(`止损过宽 ${(riskPct*100).toFixed(1)}%`);
 if (rr < MIN_RR) warnList.push(`盈亏比不足 ${rr.toFixed(2)}`);
-if (!confirmed &&!isReversal) warnList.push("未确认（无5M确认）");
+if (!confirmed) warnList.push("未确认（无5M确认）");
 if (warnList.length > 0) warnMsg = "⚠️ " + warnList.join(" & ");
 
 const tp1Pct = Math.abs(entryMid - tp1) / entryMid;
 grade = tp1Pct < GRADE_ULTRA? "超短线": tp1Pct <= GRADE_SHORT? "短线": "波段";
 const geShort = gradeAndEta(Math.abs(entryMid - tp1), atr15, 15, grade);
 grade = geShort.grade; etaText = geShort.etaText;
-if (branch === "SCALP") etaText = "约5–20分钟"; // v4.2 真短打：预计持仓 5–20 分钟（30 分钟时限见跟进提示）
+if (branch === "BREAKOUT") etaText = "约5–20分钟"; // 突破形态：预计持仓 5–20 分钟（30 分钟时限见跟进提示）
+if (grade === "波段") grade = "短线"; // v4.3：级别封顶短线，不再出波段级
 if (grade === "超短线") netDist = Math.abs(entryMid - tp1) - roundTripCost;
 
 // v3.6 判断行（死规则）：保本胜率 + 失效位距离 + 一行结论
@@ -1831,7 +1557,7 @@ judgeText = `判断：${verdictText} · 保本胜率 ≈ ${beWin!== null? Math.r
 invalidText = isLong
 ? `15M 收盘跌破 ${formatPrice(inv)}`
 : `15M 收盘站上 ${formatPrice(inv)}`;
-if (branch === "SCALP") invalidText = isLong? `5M 收盘跌破 ${formatPrice(inv)}`: `5M 收盘站上 ${formatPrice(inv)}`; // v4.2：短打失效看 5M 收盘站回台子
+if (branch === "BREAKOUT") invalidText = isLong? `5M 收盘跌破 ${formatPrice(inv)}`: `5M 收盘站上 ${formatPrice(inv)}`; // 突破形态失效看 5M 收盘站回台子
 invVal = inv;
 
 // v4.2.2：盈亏比 <1.2 不再硬过滤——票照生、照入池，只挂 ⚠️（warnList 已含「盈亏比不足」），做不做由 Aaron 判断（恢复 2026-11-12「只挂牌不压制」）；
@@ -1849,33 +1575,29 @@ if (rr === null || Math.abs(entryMid - tp1) / entryMid < MIN_TP1_PCT) {
 }
 }
 
-// v3.7 分支硬闸：反转支盈亏比 <1.2 不出单；短打支 TP1 距离不足 3 倍往返手续费不出单（只在卡上留尸体、不入池）
-if ((side === "LONG" || side === "SHORT") && branch === "SCALP") type = side === "LONG"? "短打做多 · 台子突破": "短打做空 · 台子跌破";
-if ((side === "LONG" || side === "SHORT") && branch === "REVERSAL" && rr!== null && rr < REV_RR_MIN) {
-reasons = [`反转支盈亏比 ${rr.toFixed(2)} < ${REV_RR_MIN}，不出单`,...reasons];
-side = "NONE"; type = "反转确认 · 盈亏比不足";
+// v4.3 形态硬闸：突破形态止损距离 <0.25%、TP1 距离不足 3 倍往返手续费不出单（只在卡上留尸体、不入池）
+if ((side === "LONG" || side === "SHORT") && branch === "BREAKOUT") type = side === "LONG"? "突破做多 · 台子破位": "突破做空 · 台子跌破";
+if ((side === "LONG" || side === "SHORT") && branch === "PULLBACK") type = counterTrend ? (side === "LONG"? "逆势回踩做多 · 企稳确认": "逆势反抽做空 · 受阻确认") : (side === "LONG"? "回踩做多 · 企稳确认": "反抽做空 · 受阻确认");
+if ((side === "LONG" || side === "SHORT") && branch === "BREAKOUT" && riskPct < SCALP_MIN_STOP_PCT) {
+reasons = [`突破形态止损距离 ${(riskPct * 100).toFixed(2)}% < 0.25%，手续费吃光，不出单`,...reasons];
+side = "NONE"; type = "突破 · 止损过薄不出单";
 entry = null; stop = null; tp1 = null; tp2 = null; tp3 = null;
 grade = null; etaText = null; judgeText = null; branch = null;
 }
-if ((side === "LONG" || side === "SHORT") && branch === "SCALP" && riskPct < SCALP_MIN_STOP_PCT) {
-reasons = [`短打支止损距离 ${(riskPct * 100).toFixed(2)}% < 0.25%，手续费吃光，不出单`,...reasons];
-side = "NONE"; type = "短打 · 止损过薄不出单";
-entry = null; stop = null; tp1 = null; tp2 = null; tp3 = null;
-grade = null; etaText = null; judgeText = null; branch = null;
-}
-if ((side === "LONG" || side === "SHORT") && branch === "SCALP" && tp1) {
+if ((side === "LONG" || side === "SHORT") && branch === "BREAKOUT" && tp1) {
 const emScalp = (entry[0] + entry[1]) / 2;
 if (Math.abs(emScalp - tp1) / emScalp < SCALP_FEE_MULT * (FEE_RT + SLIPPAGE_RT)) {
-reasons = ["短打支 TP1 距离不足 3 倍往返手续费，不出单",...reasons];
-side = "NONE"; type = "短打 · 肉太薄不出单";
+reasons = ["突破形态 TP1 距离不足 3 倍往返手续费，不出单",...reasons];
+side = "NONE"; type = "突破 · 肉太薄不出单";
 entry = null; stop = null; tp1 = null; tp2 = null; tp3 = null;
 grade = null; etaText = null; judgeText = null; branch = null;
 }
 }
 
-// v4.2.4 位置过滤（趋势/短打）：贴箱底不开空、贴箱顶不开多，真突破收盘豁免；反转支不经过本闸（它的活就是在极端位置接单），波段支在 analyzeSwing 内、同样不经过
-if ((side === "LONG" || side === "SHORT") && (branch === "TREND" || branch === "SCALP")) {
-const posBlock = rangePositionBlock(k15, side, entryMid);
+// v4.3 位置过滤（突破/回踩都过）：贴箱底不开空、贴箱顶不开多，真突破收盘豁免
+if ((side === "LONG" || side === "SHORT") && (branch === "BREAKOUT" || branch === "PULLBACK")) {
+const posEntryMid = (entry[0] + entry[1]) / 2; // 修正：计划块内的 entryMid 在此处已出作用域（v4.2.4 起的隐患，信号达标走到本闸时会抛错断轮），按入场区重算
+const posBlock = rangePositionBlock(k15, side, posEntryMid);
 if (posBlock) {
 reasons = [posBlock, ...reasons];
 side = "WATCH";
@@ -1884,8 +1606,8 @@ branch = null;
 }
 }
 
-// v3.6 探台硬闸：TP1 前的台子被探 ≥SHELF_KILL_TESTS 次且未被收盘跌破/站上 → 不出单（降级观望、不入池，卡上写明原因）；v3.7 起反转支豁免（瀑布后第一目标必压在旧台子下，审它等于关掉反转支）
-if ((side === "LONG" || side === "SHORT") && branch!== "REVERSAL" && shelfInfo && shelfInfo.tests >= SHELF_KILL_TESTS &&!shelfInfo.broken) {
+// 探台硬闸：TP1 前的台子被探 ≥SHELF_KILL_TESTS 次且未被收盘跌破/站上 → 不出单（降级观望、不入池，卡上写明原因）；v4.3 起全形态适用
+if ((side === "LONG" || side === "SHORT") && shelfInfo && shelfInfo.tests >= SHELF_KILL_TESTS &&!shelfInfo.broken) {
 reasons = [`TP1前有台子（${side === "LONG"? "探顶": "探底"} ${shelfInfo.tests} 次未破），不出单`,...reasons];
 side = "NONE"; type = "TP1前有台子 · 不出单";
 entry = null; stop = null; tp1 = null; tp2 = null; tp3 = null;
@@ -1906,7 +1628,7 @@ const confidence = (side === "LONG" || side === "SHORT")
   ? calculateStrategyConfidence({
       side, branch, trend4, trend1, structure1:structure1Bias,
       stage15: side === "LONG" ? longRetestSetup.stage : side === "SHORT" ? shortRetestSetup.stage : 0,
-      fiveConfirmed: confirmed || (branch === "REVERSAL" && !!revSignal),
+      fiveConfirmed: confirmed,
       rr, riskPct,
       volumeConfirmed: volOk,
       directionalCandle: side === "LONG" ? bullishCandle : bearishCandle,
@@ -1937,14 +1659,14 @@ return `${label}（时间 开/高/低/收/量）：\n${rows.join("\n")}`;
 return [fmtK(k15, 24, "近景·最近24根已收盘15M"), fmtK(k1h, 14, "中景·最近14根已收盘1H"), fmtK(k4h, 10, "远景·最近10根已收盘4H")].filter(Boolean).join("\n");
 })();
 
-const swing = analyzeSwing(info, k4h, k1h, k15, k5, price);
+const swing = null; // v4.3：波段支已删除，swing 恒为 null（卡片与分析师处的 swing 引用保持惰性）
 return {
 name: info.name, symbolId: info.id, group: info.group, price, changePct, ticker, side, type, score,
 confidenceScore: confidence.score, confidenceLabel: confidence.label, confidenceParts: confidence.parts,
 reasons: reasons.join(" · ") || "暂无明确信号",
 trend4, trend1, trend15, structure1Bias, volOk, rsiValue, div,
 entry, stop, tp1, tp2, tp3, rr, riskPct, warnMsg, grade, netDist, etaText, invalidText,
-invVal, invTf: branch === "SCALP"? "5m": "15m",
+invVal, invTf: branch === "BREAKOUT"? "5m": "15m",
 lastClose5: k5.closes[k5.closes.length - 1],
 lastClose15: k15.closes[k15.closes.length - 1],
 lastClose1h: k1h.closes[k1h.closes.length - 1],
@@ -1962,124 +1684,6 @@ marketKlines15m: k15.closes.slice(-20).map((close, i) => { const idx = k15.close
 candlePackText,
 last6Text: k15.closes.slice(-6).map((c6, i6) => { const idx6 = k15.closes.length - 6 + i6; const d6 = new Date(k15.times[idx6]); const hh6 = String(d6.getHours()).padStart(2, "0"), mm6 = String(d6.getMinutes()).padStart(2, "0"); return `${hh6}:${mm6} ${formatPrice(k15.opens[idx6])}/${formatPrice(k15.highs[idx6])}/${formatPrice(k15.lows[idx6])}/${formatPrice(c6)}`;}).join("\n"),
 last6Text5m: k5.closes.slice(-6).map((c6, i6) => { const idx6 = k5.closes.length - 6 + i6; const d6 = new Date(k5.times[idx6]); const hh6 = String(d6.getHours()).padStart(2, "0"), mm6 = String(d6.getMinutes()).padStart(2, "0"); return `${hh6}:${mm6} ${formatPrice(k5.opens[idx6])}/${formatPrice(k5.highs[idx6])}/${formatPrice(k5.lows[idx6])}/${formatPrice(c6)}`;}).join("\n")
-};
-}
-
-// ===== 波段线（独立第二轨：4H 背景 / 1H 结构 / 15M 确认） =====
-// TP 候选来自外部给定的大结构位列表，筛选口径与短线一致（剔近、合并、内收），距离单位用 ATR(1H)
-function buildSwingTpLevels(rawLevels, side, entryMid, atrUnit) {
-const isLong = side === "LONG";
-let levels = [...new Set(rawLevels.filter(v => Number.isFinite(v) && (isLong? v > entryMid: v < entryMid)))];
-levels.sort((a, b) => isLong? a - b: b - a);
-levels = levels.filter(lv => Math.abs(lv - entryMid) >= TP_MIN_DIST_ATR * atrUnit);
-const merged = [];
-for (const lv of levels) {
-if (merged.length && Math.abs(lv - merged[merged.length - 1]) < TP_MERGE_ATR * atrUnit) {
-merged[merged.length - 1] = lv;
-} else {
-merged.push(lv);
-}
-}
-return merged.map(lv => isLong? lv - 0.1 * atrUnit: lv + 0.1 * atrUnit);
-}
-
-function analyzeSwing(info, k4h, k1h, k15, k5, price) {
-if (!price || price <= 0) return null;
-if (k1h.closes.length < 60 || k15.closes.length < 5) return null;
-const trend4 = getTrend(k4h);
-const s1 = getStructure(k1h);
-const trend1 = getTrend(k1h); // v4.2.1 修复：波段线算信心时要用 1H 趋势，v4.1 漏声明此变量，BTC 一出波段候选就整卡报错（Can't find variable: trend1）
-const atr1 = s1.atrValue;
-const atr15 = getStructure(k15).atrValue;
-if (!Number.isFinite(atr1) || atr1 <= 0) return null;
-
-const h60 = Math.max(...k1h.highs.slice(-60));
-const l60 = Math.min(...k1h.lows.slice(-60));
-
-// 15M 确认：最后一根已收盘 15M K 线 —— 做多看下影拒绝（≥50%）或阳吞没；做空镜像
-const n = k15.closes.length;
-const o = k15.opens[n - 1], h = k15.highs[n - 1], l = k15.lows[n - 1], c = k15.closes[n - 1];
-const po = k15.opens[n - 2], pc = k15.closes[n - 2];
-const rng = h - l;
-const bullConfirm = rng > 0 && c > o && ((Math.min(o, c) - l) / rng >= 0.5 || (pc < po && c >= po && o <= pc));
-const bearConfirm = rng > 0 && c < o && ((h - Math.max(o, c)) / rng >= 0.5 || (pc > po && c <= po && o >= pc));
-
-// 1H 支撑/阻力候选：60 根区间极值 + 20 根前高前低 + 最近摆动点 + 宽摆动点
-const supSet = [l60, s1.previousLow];
-const resSet = [h60, s1.previousHigh];
-if (s1.lastLow) supSet.push(s1.lastLow.value);
-if (s1.lastHigh) resSet.push(s1.lastHigh.value);
-for (const p of findPivotLows(k1h.lows, 5, 3)) supSet.push(p.value);
-for (const p of findPivotHighs(k1h.highs, 5, 3)) resSet.push(p.value);
-const supports = supSet.filter(v => Number.isFinite(v) && v < price);
-const resistances = resSet.filter(v => Number.isFinite(v) && v > price);
-const support = supports.length? Math.max(...supports): null; // 离现价最近的下方支撑
-const resistance = resistances.length? Math.min(...resistances): null; // 离现价最近的上方阻力
-
-const NEAR = 0.35 * atr1;
-let side = null, level = null, modeText = "";
-const longSetup = support!== null && price - support <= NEAR && bullConfirm &&
-(trend4 === "BULL" || (trend4 === "NEUTRAL" && support <= l60 + 0.1 * atr1));
-const shortSetup = resistance!== null && resistance - price <= NEAR && bearConfirm &&
-(trend4 === "BEAR" || (trend4 === "NEUTRAL" && resistance >= h60 - 0.1 * atr1));
-if (longSetup &&!shortSetup) {
-side = "LONG"; level = support;
-modeText = trend4 === "BULL"? "趋势回踩": "区间下沿";
-} else if (shortSetup &&!longSetup) {
-side = "SHORT"; level = resistance;
-modeText = trend4 === "BEAR"? "趋势反抽": "区间上沿";
-} else {
-return null;
-}
-
-const isLong = side === "LONG";
-const entry = isLong
-? [price - atr15 * 0.25, price + atr15 * 0.1]
-: [price - atr15 * 0.1, price + atr15 * 0.25];
-const entryMid = (entry[0] + entry[1]) / 2;
-const stop = isLong? level - 0.5 * atr1: level + 0.5 * atr1;
-
-const rawTp = isLong? [...resSet]: [...supSet];
-for (const p of (isLong? findPivotHighs(k4h.highs): findPivotLows(k4h.lows))) rawTp.push(p.value);
-const tps = buildSwingTpLevels(rawTp, side, entryMid, atr1);
-const tp1 = tps.length > 0? tps[0]: null;
-const tp2 = tps.length > 1? tps[1]: null;
-const tp3 = tps.length > 2? tps[2]: null;
-if (!tp1) return null;
-
-const roundTripCost = entryMid * (FEE_RT + SLIPPAGE_RT);
-const netReward = Math.abs(entryMid - tp1) - roundTripCost;
-const netRisk = Math.abs(entryMid - stop) + roundTripCost;
-const rr = netRisk > 0 ? netReward / netRisk : null;
-const riskPct = Math.abs(stop - entryMid) / entryMid;
-const tp1Pct = Math.abs(entryMid - tp1) / entryMid;
-// 硬门槛：TP1 必须够波段距离且盈亏比过线，否则不出（不硬凑波段）
-if (tp1Pct <= GRADE_SHORT || rr < MIN_RR) return null;
-
-const warnMsg = riskPct > WIDE_STOP_PCT? `⚠️ 止损过宽 ${(riskPct * 100).toFixed(1)}%`: "";
-const grade = "波段";
-const etaText = gradeAndEta(Math.abs(entryMid - tp1), atr1, 60, grade).etaText;
-const invalidText = isLong? `1H 收盘跌破 ${formatPrice(level)}`: `1H 收盘站上 ${formatPrice(level)}`;
-const fiveConfirmed = isFiveMinuteConfirm(k5, side, level, atr1);
-const volAvg5 = sma(k5.volumes.slice(0, -1), 20);
-const volConfirmed5 = volAvg5 !== null && k5.volumes[k5.volumes.length - 1] > volAvg5 * VOL_MULT;
-const directionalCandle5 = isLong
-  ? k5.closes[k5.closes.length - 1] > k5.opens[k5.opens.length - 1]
-  : k5.closes[k5.closes.length - 1] < k5.opens[k5.opens.length - 1];
-const confidence = calculateStrategyConfidence({
-  side, branch:"SWING", trend4, trend1, structure1:getStructureBias(k1h), stage15:2,
-  fiveConfirmed, rr, riskPct, volumeConfirmed:volConfirmed5,
-  directionalCandle:directionalCandle5, divergenceConfirmed:false
-});
-const reasons = isLong
-? `${trend4 === "BULL"? "4H趋势偏多": "4H中性"} · ${modeText} 1H 支撑 ${formatPrice(level)} · 15M 企稳确认${fiveConfirmed ? " · 5M跟进确认" : " · 5M尚未进一步确认"}`
-: `${trend4 === "BEAR"? "4H趋势偏空": "4H中性"} · ${modeText} 1H 阻力 ${formatPrice(level)} · 15M 滞涨确认${fiveConfirmed ? " · 5M跟进确认" : " · 5M尚未进一步确认"}`;
-
-return {
-track: "SWING", branch: "SWING", side, type: `波段${isLong? "做多": "做空"} · ${modeText}`,
-reasons, entry, stop, tp1, tp2, tp3, rr, riskPct, warnMsg, grade, etaText,
-confidenceScore:confidence.score, confidenceLabel:confidence.label, confidenceParts:confidence.parts,
-netDist: null, invalidText, invVal: level, invTf: "1h", score: null
 };
 }
 
@@ -2290,32 +1894,13 @@ r.reasons = "生成时已失效（收盘已越线）：" + r.reasons;
 r.entry = null; r.stop = null; r.tp1 = null; r.tp2 = null; r.tp3 = null;
 }
 }
-// 波段同理（失效周期 1H）
-if (r.swing && Number.isFinite(r.swing.invVal)) {
-const lcSwing = r.swing.invTf === "1h"? r.lastClose1h: r.lastClose15;
-if (Number.isFinite(lcSwing) && ((r.swing.side === "SHORT" && lcSwing > r.swing.invVal) || (r.swing.side === "LONG" && lcSwing < r.swing.invVal))) {
-r.swing = null;
-}
-}
-// v3.7 相冲：波段与短线轨道同轮反向 → 两边互相打标；反转支遇相冲让行（不入池）
-if (r.swing && (r.side === "LONG" || r.side === "SHORT") && r.swing.side!== r.side && r.branch) {
-r.conflictWith = "波段支";
-r.swing.conflictWith = BRANCH_LABEL[r.branch] || "短线支";
-if (r.branch === "REVERSAL") r.suppressRecord = true;
-}
 if (r.side === "LONG" || r.side === "SHORT") {
 newSignalSet.add(r.symbolId + "_" + r.side);
-// 只有明确归入分支的正式信号才进入策略池；趋势、反转、波段先经过AI审核，短打直入池+AI事后点评（v4.2）。
-if (r.branch &&!r.suppressRecord) {
+// 只有明确归入形态的正式信号才进入策略池；回踩先经过AI审核，突破直入池+AI事后点评（v4.3）。
+if (r.branch) {
 const added = await gateAndRecord(r);
 if (added) hasNewRecord = true;
 }
-}
-// 波段线：独立入池（带 SWING 标记，与短线记录分开去重、分开算有效期），同样走 AI 把关
-if (r.swing) {
-const swingData = {...r.swing, name: r.name, symbolId: r.symbolId, price: r.price, dayHigh: r.dayHigh, dayLow: r.dayLow, trend4:r.trend4, trend1:r.trend1, trend15:r.trend15, structure1Bias:r.structure1Bias, volOk:r.volOk, rsiValue:r.rsiValue, div:r.div, candlePackText:r.candlePackText, last6Text:r.last6Text, last6Text5m:r.last6Text5m, atr15Val:r.atr15Val};
-const addedSwing = await gateAndRecord(swingData);
-if (addedSwing) hasNewRecord = true;
 }
 }
 
@@ -2354,8 +1939,6 @@ setStatus("live", "行情已就绪");
 
 lastMarketResults = results;
 renderTrackingPool();
-await updateEqnStrategies(results, false);
-for (const m of results) if (m.price > 0) checkEqnStrategyTriggers(m.symbolId, m.price);
 
 const failed = results.filter(x => x.price === 0);
 if (failed.length) {
@@ -2645,57 +2228,7 @@ function closedK15(k15) {
   return { opens: [...k15.opens], highs: [...k15.highs], lows: [...k15.lows], closes: [...k15.closes], times: [...k15.times] };
 }
 
-// 反转支二次确认：极端值出现时登记企稳位（最近 2 根已收盘 15M 的极值）；
-// 之后任一根新收盘 15M 收盘守住企稳位 → 确认；收盘破位 → 观察作废
-function saveReversalWatches() {
-  try { localStorage.setItem("weex_rev_watch", JSON.stringify(revWatch)); } catch (e) {}
-}
-function loadReversalWatches() {
-  try {
-    const saved = JSON.parse(localStorage.getItem("weex_rev_watch") || "{}");
-    if (saved && typeof saved === "object") {
-      for (const [key, value] of Object.entries(saved)) {
-        if (value && Number.isFinite(value.stab) && Number.isFinite(value.barTs) && Number.isFinite(value.ts) && Date.now() - value.ts <= REV_WATCH_TTL_MS) revWatch[key] = value;
-      }
-    }
-  } catch (e) {}
-}
-function registerReversalWatch(symbolId, side, k15) {
-const ck = closedK15(k15);
-if (!ck || ck.closes.length < 2) return;
-const key = symbolId + "_" + side;
-const old = revWatch[key];
-if (old && Date.now() - old.ts < REV_WATCH_TTL_MS) return; // 已在观察：不重置企稳位
-const m = ck.closes.length;
-const stab = side === "LONG"? Math.min(ck.lows[m - 1], ck.lows[m - 2]): Math.max(ck.highs[m - 1], ck.highs[m - 2]);
-revWatch[key] = { stab, barTs: ck.times[m - 1], ts: Date.now()};
-saveReversalWatches();
-}
-function checkReversalConfirm(symbolId, k15, k5) {
-  const ck = closedK15(k15);
-  if (!ck || ck.closes.length < 3 || !k5 || k5.closes.length < 3) return null;
-  const m = ck.closes.length, last = m - 1, prev = m - 2;
-  const lastTs = ck.times[last], lastClose = ck.closes[last];
-  for (const side of ["LONG", "SHORT"]) {
-    const key = symbolId + "_" + side, w = revWatch[key];
-    if (!w) continue;
-    if (Date.now() - w.ts > REV_WATCH_TTL_MS) { delete revWatch[key]; saveReversalWatches(); continue; }
-    if (!(lastTs > w.barTs)) continue;
-    const broken = side === "LONG" ? lastClose < w.stab : lastClose > w.stab;
-    if (broken) { delete revWatch[key]; saveReversalWatches(); continue; }
-    const candlePush = side === "LONG"
-      ? ck.closes[last] > ck.opens[last] && ck.closes[last] > ck.highs[prev]
-      : ck.closes[last] < ck.opens[last] && ck.closes[last] < ck.lows[prev];
-    const fivePush = isFiveMinuteConfirm(k5, side, w.stab, atr(k15, 14) || lastClose * 0.005);
-    if (candlePush && fivePush) { delete revWatch[key]; saveReversalWatches(); return { side, stab: w.stab }; }
-    // 没有破位但力量不足：继续观察下一根15M，不把第一次弱反弹误当确认。
-    w.barTs = lastTs;
-    saveReversalWatches();
-  }
-  return null;
-}
-
-// 短打支触发（v4.2 改真短打）：台子与被探次数仍按已收盘 15M 结构数；破位改由已收盘 5M 判定——
+// 突破形态触发（原短打支，v4.3 改名）：台子与被探次数仍按已收盘 15M 结构数；破位改由已收盘 5M 判定——
 // 最后一根 5M 收盘越过台子 ≥0.2×ATR(5M)、上一根 5M 收盘尚未决定性越过（新鲜破位）、破位K线放量 ≥1.5 倍均量且收在极值附近，当根出生；
 // 同一币种同一台子当天已有短打记录用过 → 不再重复出。找不到返回 null
 function detectScalpShelf(k15, k5, side, atr5, symbolId) {
@@ -2724,7 +2257,7 @@ const atr15v = atr(k15, 14);
 const bandAtr = Number.isFinite(atr15v) && atr15v > 0 ? atr15v : atr5;
 // 同一台子一天只许破一次：今天已有同币同向短打记录用过这层台子（失效位 ±0.15% 内）→ 跳过
 const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
-const shelfUsedToday = (s) => recordPool.some(r => r.branch === "SCALP" && r.symbolId === symbolId && r.side === side && r.ts >= dayStart.getTime() && Number.isFinite(r.invVal) && Math.abs(r.invVal - s) / s <= 0.0015);
+const shelfUsedToday = (s) => recordPool.some(r => (r.branch === "BREAKOUT" || r.branch === "SCALP") && r.symbolId === symbolId && r.side === side && r.ts >= dayStart.getTime() && Number.isFinite(r.invVal) && Math.abs(r.invVal - s) / s <= 0.0015);
 let best = null;
 for (const s of cands) {
 if (!Number.isFinite(s)) continue;
@@ -2747,7 +2280,7 @@ if (best === null || (isLong ? s > best : s < best)) best = s; // 取最近的�
 return best;
 }
 
-// ===== DeepSeek AI 把关（v4.1；v4.2 修订；v4.2.2 把关改回单条件——只有结论「放弃」才拦，评级只展示）：趋势/反转/波段入池前审核；短打支规则直入池 + AI 事后点评，不走事前把关。
+// ===== DeepSeek AI 把关（v4.1；v4.2 修订；v4.2.2 把关改回单条件——只有结论「放弃」才拦，评级只展示）：回踩入池前审核；突破规则直入池 + AI 事后点评，不走事前把关。
 function aiStrictMode() {
 try { return localStorage.getItem('weex_ai_strict') !== "0";} catch (e) { return true;}
 }
@@ -2791,12 +2324,10 @@ function saveDsKey() {
 function buildDsPrompt(d, rec) {
   const sideText = rec.side === "LONG" ? "做多" : "做空";
   const isLong = rec.side === "LONG";
-  const branchText = BRANCH_LABEL[rec.branch] || (rec.track === "SWING" ? "波段支" : "未分支");
-  const confirmationText = rec.branch === "REVERSAL"
-    ? "反转支已通过独立的15M与5M二次确认"
-    : rec.branch === "SWING"
-      ? (String(rec.reasons || "").includes("5M跟进确认") ? "15M结构确认，5M也有跟进确认" : "15M结构确认，5M未额外确认")
-      : (d.confirmed ? "最近一根有效5M K线已完成方向确认" : "未完成最新5M确认");
+  const branchText = BRANCH_LABEL[rec.branch] || "未分支";
+  const confirmationText = rec.branch === "BREAKOUT"
+    ? "台子经多次测试后被最新已收盘5M放量破位（新鲜破位，收在极值附近）"
+    : (d.confirmed ? "最近一根有效5M K线已完成方向确认" : "未完成最新5M确认");
   const aboveLine = isLong
     ? `上方目标：TP1 ${formatPrice(rec.tp1Val)} / TP2 ${formatPrice(rec.tp2Val)} / TP3 ${formatPrice(rec.tp3Val)}`
     : `上方失效位：${formatPrice(rec.invVal)}（${rec.invalidText || "--"}）`;
@@ -2806,9 +2337,9 @@ function buildDsPrompt(d, rec) {
   const lines = [
     "你是谨慎、严格的加密货币合约交易员，负责在策略进入正式策略池之前做独立复核。你不是来迎合程序的，发现明显缺陷必须否决。",
     "你只能使用本条消息提供的数据。不得编造价格、成交量、指标、结构位或胜率；数据不足必须降级为观望。",
-    "审核顺序：1. 4H大趋势是否支持；2. 1H EMA方向与摆动结构是否协调；3. 15M突破/回踩/反转结构是否真实且新鲜；4. 5M确认是否为最新已收盘K线、是否已经过期或追价；5. TP1前是否有明显支撑阻力障碍；6. 扣除默认手续费与滑点后的净盈亏比、止损宽度和目标空间。",
+    "审核顺序：1. 4H大趋势是否支持；2. 1H EMA方向与摆动结构是否协调；3. 15M突破/回踩结构是否真实且新鲜；4. 5M确认是否为最新已收盘K线、是否已经过期或追价；5. TP1前是否有明显支撑阻力障碍；6. 扣除默认手续费与滑点后的净盈亏比、止损宽度和目标空间。",
     "看原始K线时重点核对：价格在近期区间的位置（贴下沿别追空、贴上沿别追多）、同一价位被影线插穿后收盘是否收回（承接/派发）、实体与量能是否衰减；程序标签与原始K线矛盾时，以原始K线为准并在理由中指出。",
-    "普通趋势/短打策略不得逆着明确的4H或1H方向；反转支可以逆势，但必须同时有极端位置、背离/成交量依据和反向结构确认。波段支重点看4H背景、1H结构和15M确认。",
+    "突破/回踩不得逆着明确的1H方向；回踩可以逆4H（票面标明逆势），但必须有1H至少一侧支持、15M企稳和5M确认，否则应给放弃或观望。",
     "信心评级含义：高=各周期高度协调、结构和入场确认完整、风险收益空间较好；中偏高=核心条件成立，仅有轻微瑕疵；中=存在明显不确定性，应观察等待；中偏低/低=结构、确认或交易价值不足。评级不是胜率。",
     "准入规则（与程序一致）：结论‘放弃’=否决、不入池；结论‘观望’或‘可做’=可入池，评级只表达质量、不单独决定准入。发现结构已失效、贴区间极端位置追单、或关键数据不足时，应给放弃或观望并写明。",
     "价格纪律：理由和风险中出现的任何具体价位，只能引用下方列出的入场、止损、失效位、TP或日内区间；没有提供的价位不准推算。",
@@ -2819,7 +2350,7 @@ function buildDsPrompt(d, rec) {
     "风险：不超过50字，指出最需要防范的问题",
     "",
     `币种：${rec.name}（${rec.symbolId}）`,
-    `方向：${sideText}；分支：${branchText}；轨道：${rec.track === "SWING" ? "波段" : "短线"}`,
+    `方向：${sideText}；分支：${branchText}；轨道：短线`,
     `策略程序信心：${rec.confidenceLabel || d.confidenceLabel || "未计算"}（${Number.isFinite(rec.confidenceScore) ? rec.confidenceScore : Number.isFinite(d.confidenceScore) ? d.confidenceScore : "--"}/100，表示条件完整度，不是胜率）`,
     `4H趋势：${d.trend4 || "--"}；1H方向：${d.trend1 || "--"}；1H摆动结构：${d.structure1Bias || "--"}；15M方向：${d.trend15 || "--"}`,
     `确认状态：${confirmationText}`,
@@ -2900,8 +2431,8 @@ async function scalpPostReview(d, rec) {
 async function gateAndRecord(d) {
   const rec = buildRecord(d);
   if (!rec) return null;
-  // v4.2 短打支：规则直入池 + AI 事后点评（5M 的单等不起事前把关）；其余分支仍走下方入池前审核
-  if (rec.branch === "SCALP") {
+  // v4.3 突破形态：规则直入池 + AI 事后点评（5M 的单等不起事前把关）；回踩走下方入池前审核
+  if (rec.branch === "BREAKOUT") {
     rec.aiGate = "post";
     insertRecord(rec);
     scalpPostReview(d, rec);
@@ -3414,16 +2945,12 @@ initTheme();
 initDsSettings();
 updateAiStrictBtn();
 loadRecords();
-loadEqnStrategies();
-loadReversalWatches();
 renderRecordPool();
 renderTrackingPool();
-renderEqnPool();
 renderAiWorkspace();
 initAiMarketAuto();
 loadAll();
 startTimer();
-startEqnRefreshTimer();
 connectWs();
 
 </script>
