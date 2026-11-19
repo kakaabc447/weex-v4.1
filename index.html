@@ -284,7 +284,9 @@ position: relative;
 <button class="tab-btn" onclick="switchTab('group2', this)">SOL / ZEC</button>
 <button class="tab-btn" onclick="switchTab('group3', this)">XAUT / SNDK</button>
 <button class="tab-btn" onclick="switchTab('group4', this)">SKHYNIX</button>
+<button class="tab-btn" onclick="switchTab('group5', this)">山寨精选</button>
 </div>
+<div id="altUniverseStatus" style="font-size:11px;color:var(--muted);padding:2px 3px 9px;line-height:1.6">山寨币动态筛选：等待读取成交额数据</div>
 
 <div class="grid" id="cards">
 <div class="loading-overlay">加载中...</div>
@@ -358,12 +360,18 @@ position: relative;
 
 // ===== 常量配置 =====
 const API = "https://api-contract.weex.com/capi/v3";
-const SYMBOLS = [
+const CORE_SYMBOLS = [
 {id:"BTCUSDT", name:"BTC", group:"group1"}, {id:"ETHUSDT", name:"ETH", group:"group1"},
 {id:"SOLUSDT", name:"SOL", group:"group2"}, {id:"ZECUSDT", name:"ZEC", group:"group2"},
+{id:"BNBUSDT", name:"BNB", group:"group2"},
 {id:"XAUTUSDT", name:"XAUT", group:"group3"}, {id:"SNDKUSDT", name:"SNDK", group:"group3"},
 {id:"SKHYNIXUSDT", name:"SKHYNIX", group:"group4"}
 ];
+// 动态山寨精选：每轮从 WEEX USDT 永续合约中筛选，最多 5 个；不满足数据门槛时宁缺毋滥。
+const MAX_DYNAMIC_ALTS = 5, MIN_ALT_QUOTE_VOLUME = 2000000;
+let dynamicAltSymbols = [];
+let SYMBOLS = CORE_SYMBOLS.slice();
+let contractRows = [];
 
 const LIMIT = 300;
 const EMA_FAST = 50, EMA_SLOW = 200;
@@ -1078,7 +1086,8 @@ async function ensureContractInfo() {
     if (!response.ok) throw new Error("合约信息HTTP " + response.status);
     const raw = await response.json();
     if (!raw || !Array.isArray(raw.symbols) || !raw.symbols.length) throw new Error("合约信息返回格式异常");
-    availableSymbols = new Set(raw.symbols.map(x => String(x.symbol || "").toUpperCase()).filter(Boolean));
+    contractRows = raw.symbols.filter(x => x && x.symbol).map(x => ({...x, symbol:String(x.symbol).toUpperCase()}));
+    availableSymbols = new Set(contractRows.map(x => x.symbol));
     contractInfoLoaded = true;
   } catch (e) {
     // 合约信息验证失败不伪造支持状态；继续尝试用户原先配置的币种，并在状态区提示。
@@ -1096,13 +1105,66 @@ const rows = Array.isArray(raw)? raw: (Array.isArray(raw.data)? raw.data: [raw])
 const receivedAt = Date.now(); let count = 0;
 for (const row of rows) {
 const symbol = String(row.symbol || "").toUpperCase();
-if (!SYMBOLS.some(x => x.id === symbol)) continue;
+tickerRowsBySymbol[symbol] = row;
 const q = normalizeTicker(row, receivedAt);
 if (q) { tickerCache[symbol] = q; count++;}
 }
-if (count === 0) throw new Error("未读取到对应币种ticker");
+if (count === 0) throw new Error("未读取到 WEEX ticker");
 return count;
 }
+
+function tickerQuoteVolume(row) {
+  const direct = [row.quoteVolume,row.quoteVol,row.turnover24h,row.quote_volume,row.turnover,row.amount24h,row.volCcy24h].map(Number).find(v => Number.isFinite(v) && v > 0);
+  if (direct) return direct;
+  const baseVol = Number(row.volume ?? row.baseVolume ?? row.vol);
+  const price = Number(row.lastPrice ?? row.last ?? row.close ?? row.c);
+  return Number.isFinite(baseVol) && baseVol > 0 && Number.isFinite(price) && price > 0 ? baseVol * price : 0;
+}
+
+function buildDynamicAltUniverse() {
+  const excluded = /^(USDC|USDT|BUSD|DAI|FDUSD|TUSD|USDE|USD1|EUR|GBP|JPY|XAUT|PAXG)/;
+  const leveraged = /(UP|DOWN|BULL|BEAR|[235]L|[235]S)$/;
+  const coreIds = new Set(CORE_SYMBOLS.map(x => x.id));
+  const candidates = [];
+  const btcChange = Number(tickerCache.BTCUSDT?.changePct) || 0;
+  for (const row of contractRows) {
+    const id = String(row.symbol || "").toUpperCase();
+    if (!id.endsWith("USDT") || coreIds.has(id) || excluded.test(id.replace(/USDT$/, "")) || leveraged.test(id.replace(/USDT$/, ""))) continue;
+    if (availableSymbols && !availableSymbols.has(id)) continue;
+    const status = String(row.status ?? row.state ?? "").toUpperCase();
+    if (status && !["TRADING","1","ONLINE","NORMAL"].includes(status)) continue;
+    const q = tickerCache[id];
+    if (!q) continue;
+    // 从 ticker 原始字段估算成交额；若接口没有成交额字段，则不凭空给它排名。
+    const rawTicker = tickerRowsBySymbol[id];
+    const quoteVol = rawTicker ? tickerQuoteVolume(rawTicker) : 0;
+    if (quoteVol < MIN_ALT_QUOTE_VOLUME) continue;
+    const change = Math.abs(Number(q.changePct) || 0);
+    // 先保证流动性，再用成交活跃度与波动性排序，避免单纯追逐涨幅最大的币。
+    const activity = Math.log10(quoteVol);
+    const relativeStrength = (Number(q.changePct) || 0) - btcChange;
+    const volatility = Math.min(Math.abs(relativeStrength), 30) / 30;
+    const score = activity * 0.65 + volatility * 0.35;
+    candidates.push({id, name:id.replace(/USDT$/, ""), group:"group5", quoteVol, change, relativeStrength, score});
+  }
+  candidates.sort((a,b) => b.score-a.score);
+  dynamicAltSymbols = candidates.slice(0, MAX_DYNAMIC_ALTS).map(({id,name,group}) => ({id,name,group}));
+  SYMBOLS = CORE_SYMBOLS.concat(dynamicAltSymbols);
+  const el = document.getElementById("altUniverseStatus");
+  if (el) {
+    const names = candidates.slice(0, MAX_DYNAMIC_ALTS).map(x => `${x.name}（相对BTC ${x.relativeStrength >= 0 ? "+" : ""}${x.relativeStrength.toFixed(2)}%）`).join("、");
+    el.textContent = dynamicAltSymbols.length
+      ? `山寨精选（每轮动态更新）｜24小时成交额≥${MIN_ALT_QUOTE_VOLUME/1000000}M USDT｜相对BTC强弱：${names}`
+      : `山寨精选暂时没有符合条件的币种。需要 WEEX 返回有效的 24 小时成交额且达到约 ${MIN_ALT_QUOTE_VOLUME/1000000}M USDT；不会用虚构数据补位。`;
+  }
+  // 若 WebSocket 已连接，补订阅本轮新入选的山寨币，不必等待断线重连。
+  if (wsConn && wsConn.readyState === 1 && dynamicAltSymbols.length) {
+    try { wsConn.send(JSON.stringify({method:"SUBSCRIBE", params:dynamicAltSymbols.map(x => x.id + "@ticker"), id:Date.now()})); } catch (e) {}
+  }
+  return dynamicAltSymbols;
+}
+
+const tickerRowsBySymbol = Object.create(null);
 
 async function fetchKlines(symbol, interval) {
 const url = API + "/market/klines?symbol=" + encodeURIComponent(symbol) + "&interval=" + encodeURIComponent(interval) + "&limit=" + LIMIT;
@@ -1848,6 +1910,7 @@ document.getElementById("errorBox").style.display = "none";
 try {
 await ensureContractInfo();
 await refreshTickerSnapshot();
+buildDynamicAltUniverse();
 
 const results = await Promise.all(SYMBOLS.map(async symbol => {
 try {
@@ -1921,7 +1984,7 @@ document.getElementById("cards").innerHTML = results.map(renderCard).join("");
 
 const btns = document.querySelectorAll('#tabContainer .tab-btn');
 btns.forEach((b, index) => {
-if (index === ["group1", "group2", "group3", "group4"].indexOf(currentTab)) b.classList.add('active');
+if (index === ["group1", "group2", "group3", "group4", "group5"].indexOf(currentTab)) b.classList.add('active');
 else b.classList.remove('active');
 });
 
